@@ -24,6 +24,9 @@ from pomdp_py.algorithms.po_uct import POUCT, QNode, VNode, RootVNode,\
 from pomdp_py.algorithms.bsp.blqr import BLQR
 from pomdp_py import visual
 
+# Adding the AC-POMCP algo
+from pomdp_py.algorithms.ac_pomcp.ac_pomcp import AC_POMCP
+
 # Templates & Utilities
 from pomdp_py.utils.templates import *
 from pomdp_py.utils.debugging import TreeDebugger
