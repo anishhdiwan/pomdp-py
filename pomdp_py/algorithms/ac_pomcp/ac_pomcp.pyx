@@ -1,24 +1,7 @@
 """
-We implement AC_POMCP as described in the original paper
-Monte-Carlo Planning in Large POMDPs
-https://papers.nips.cc/paper/4031-monte-carlo-planning-in-large-pomdps
+This is an implementation of the AC-POMCP algorithm. The algorithm builds on the PO-UCT algorithm which is its base class
 
-One thing to note is that, in this algorithm, belief
-update happens as the simulation progresses. The new
-belief is stored in the vnodes at the level after
-executing the next action. These particles will
-be reinvigorated if they are not enough.
-
-However, it is possible to separate MCTS completely
-from the belief update. This means the belief nodes
-no longer keep track of particles, and belief update
-and particle reinvogration happen for once after MCTS
-is completed. I have previously implemented this version.
-This version is also implemented in BasicAC_POMCP.jl
-(https://github.com/JuliaPOMDP/BasicAC_POMCP.jl)
-The two should be EQUIVALENT. In general, it doesn't
-hurt to do the belief update during MCTS, a feature
-of using particle representation.
+This implementation is based on the implementations of other POMDP algorithms from https://h2r.github.io/pomdp-py/html/installation.html
 """
 
 from pomdp_py.framework.basics cimport Action, Agent, POMDP, State, Observation,\
@@ -59,9 +42,7 @@ cdef class RootVNodeParticles(RootVNode):
 
 cdef class AC_POMCP(POUCT):
 
-    """AC_POMCP is POUCT + particle belief representation.
-    This AC_POMCP version only works for problems
-    with action space that can be enumerated."""
+    """AC_POMCP description ..."""
 
     def __init__(self,
                  max_depth=5, planning_time=-1., num_sims=-1,
