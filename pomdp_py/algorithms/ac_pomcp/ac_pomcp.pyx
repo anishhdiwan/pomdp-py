@@ -71,13 +71,95 @@ cdef class AC_POMCP(POUCT):
     # def updateNetworks(self):
     #     ### ADD NEW ###
 
-    def plan(self, agent):
-        ### CHANGE: Remove this and directly change the plan method in POUCT ###
-        # Only works if the agent's belief is particles
-        if not isinstance(agent.belief, Particles):
-            raise TypeError("Agent's belief is not represented in particles.\n"\
-                            "AC_POMCP not usable. Please convert it to particles.")
-        return POUCT.plan(self, agent)
+
+    ### NEW ###
+    cpdef public plan(self, Agent agent):
+        cdef Action action
+        cdef float time_taken
+        cdef int sims_count
+
+        self._agent = agent   # switch focus on planning for the given agent
+        if not hasattr(self._agent, "tree"):
+            self._agent.add_attr("tree", None)
+        action, time_taken, sims_count = self._search()
+        self._last_num_sims = sims_count
+        self._last_planning_time = time_taken
+        return action
+
+
+    ### NEW ###
+    cpdef _search(self):
+        cdef State state
+        cdef Action best_action
+        cdef int sims_count = 0
+        cdef float time_taken = 0
+        cdef float best_value
+        cdef bint stop_by_sims = self._num_sims > 0
+        cdef object pbar
+
+        if self._show_progress:
+            if stop_by_sims:
+                total = int(self._num_sims)
+            else:
+                total = self._planning_time
+            pbar = tqdm(total=total)
+
+        start_time = time.time()
+        while True:
+            ## Note: the tree node with () history will have
+            ## the init belief given to the agent.
+            state = self._agent.sample_belief()
+            
+            #### TESTING ####
+            # print("During one simulation")
+            # print(f"Sampled Particle On Which Sim Is Conditioned {state}")
+            # # print(f"Current belief {self._agent._cur_belief}")
+            # print(f"History {self._agent.history}")
+            # print(f"Search Tree: {self._agent.tree}")
+            # if not self._agent.tree == None:
+            #     print(f"Action values at root node: {self._agent.tree.print_children_value()}")
+            #     print(f"Best action at this point: {self._agent.tree.argmax()}")
+            # print("-----")
+            #### TESTING ####
+
+            self._simulate(state, self._agent.history, self._agent.tree,
+                           None, None, 0)
+            sims_count +=1
+            time_taken = time.time() - start_time
+
+            if self._show_progress and sims_count % self._pbar_update_interval == 0:
+                if stop_by_sims:
+                    pbar.n = sims_count
+                else:
+                    pbar.n = time_taken
+                pbar.refresh()
+
+            if stop_by_sims:
+                if sims_count >= self._num_sims:
+                    break
+            else:
+                if time_taken > self._planning_time:
+                    if self._show_progress:
+                        pbar.n = self._planning_time
+                        pbar.refresh()
+                    break
+
+        if self._show_progress:
+            pbar.close()
+
+        best_action = self._agent.tree.argmax()
+        return best_action, time_taken, sims_count
+
+
+    cpdef _simulate(AC_POMCP self,
+                    State state, tuple history, VNode root, QNode parent,
+                    Observation observation, int depth):
+        ### CHANGE: Add ac-pomcp logic ###
+        total_reward = POUCT._simulate(self, state, history, root, parent, observation, depth)
+        if depth == 1 and root is not None:
+            root.belief.add(state)  # belief update happens as simulation goes.
+        return total_reward
+
 
     cpdef update(self, Agent agent, Action real_action, Observation real_observation,
                  state_transform_func=None):
@@ -112,14 +194,7 @@ cdef class AC_POMCP(POUCT):
         if agent.tree is not None:
             agent.tree.belief = copy.deepcopy(agent.belief)
 
-    cpdef _simulate(AC_POMCP self,
-                    State state, tuple history, VNode root, QNode parent,
-                    Observation observation, int depth):
-        ### CHANGE: Add ac-pomcp logic ###
-        total_reward = POUCT._simulate(self, state, history, root, parent, observation, depth)
-        if depth == 1 and root is not None:
-            root.belief.add(state)  # belief update happens as simulation goes.
-        return total_reward
+
 
     def _VNode(self, agent=None, root=False, **kwargs):
         """Returns a VNode with default values; The function naming makes it clear
