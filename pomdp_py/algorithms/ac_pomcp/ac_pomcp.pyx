@@ -14,7 +14,6 @@ import copy
 import time
 import random
 import math
-import torch
 
 
 cdef class VNodeParticles(VNode):
@@ -61,17 +60,19 @@ cdef class AC_POMCP(POUCT):
                          action_prior=action_prior,
                          show_progress=show_progress,
                          pbar_update_interval=pbar_update_interval)
-        print("THIS IS THE AC_POMCP ALGO!")
-        temp = torch.tensor([1., 2.])
-        print(temp)
 
     @property
     def update_agent_belief(self):
+        ### UNSURE ###
         """True if planner's update function also updates agent's
         belief."""
         return True
 
+    # def updateNetworks(self):
+    #     ### ADD NEW ###
+
     def plan(self, agent):
+        ### CHANGE: Remove this and directly change the plan method in POUCT ###
         # Only works if the agent's belief is particles
         if not isinstance(agent.belief, Particles):
             raise TypeError("Agent's belief is not represented in particles.\n"\
@@ -80,6 +81,7 @@ cdef class AC_POMCP(POUCT):
 
     cpdef update(self, Agent agent, Action real_action, Observation real_observation,
                  state_transform_func=None):
+        ### CHANGE ###
         """
         Assume that the agent's history has been updated after taking real_action
         and receiving real_observation.
@@ -113,6 +115,7 @@ cdef class AC_POMCP(POUCT):
     cpdef _simulate(AC_POMCP self,
                     State state, tuple history, VNode root, QNode parent,
                     Observation observation, int depth):
+        ### CHANGE: Add ac-pomcp logic ###
         total_reward = POUCT._simulate(self, state, history, root, parent, observation, depth)
         if depth == 1 and root is not None:
             root.belief.add(state)  # belief update happens as simulation goes.
@@ -121,6 +124,7 @@ cdef class AC_POMCP(POUCT):
     def _VNode(self, agent=None, root=False, **kwargs):
         """Returns a VNode with default values; The function naming makes it clear
         that this function is about creating a VNode object."""
+        ### UNSURE ###
         if root:
             # agent cannot be None.
             return RootVNodeParticles(self._num_visits_init,

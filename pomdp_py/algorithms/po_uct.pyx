@@ -310,6 +310,19 @@ cdef class POUCT(Planner):
             ## Note: the tree node with () history will have
             ## the init belief given to the agent.
             state = self._agent.sample_belief()
+            
+            #### TESTING ####
+            # print("During one simulation")
+            # print(f"Sampled Particle On Which Sim Is Conditioned {state}")
+            # # print(f"Current belief {self._agent._cur_belief}")
+            # print(f"History {self._agent.history}")
+            # print(f"Search Tree: {self._agent.tree}")
+            # if not self._agent.tree == None:
+            #     print(f"Action values at root node: {self._agent.tree.print_children_value()}")
+            #     print(f"Best action at this point: {self._agent.tree.argmax()}")
+            # print("-----")
+            #### TESTING ####
+
             self._simulate(state, self._agent.history, self._agent.tree,
                            None, None, 0)
             sims_count +=1
