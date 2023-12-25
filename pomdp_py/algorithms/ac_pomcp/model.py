@@ -1,10 +1,13 @@
 import numpy as np
+import pomdp_py
+from pomdp_problems.rocksample import rocksample_problem as rs
+import random
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-import random
+
 
 class LatentSpaceTf(nn.Module):
     """
@@ -149,9 +152,9 @@ class MultiHeadAutoencoder(nn.Module):
             self.output_heads[i] = nn.Sequential(*self.output_heads[i])
 
 
-        # Take in the whole batch of conditioned inputs in the latent space and compute new probabilities
+        # Take in the whole batch of concatenated outputs and compute their probabilities
         self.output_prob_predicter = nn.Sequential(
-            LatentSpaceTf(batch_size*latent_space_dim, output_prob_predicter_hidden_layers, batch_size),
+            LatentSpaceTf(int(batch_size*sum(out_dims)), output_prob_predicter_hidden_layers, batch_size),
             nn.Softmax(dim=0)
             )
 
@@ -164,11 +167,76 @@ class MultiHeadAutoencoder(nn.Module):
         for output_head in self.output_heads:
             outputs.append(output_head(conditioned_input))
 
-        output_probabilities = self.output_prob_predicter(conditioned_input.flatten())
         concatenated_output = torch.cat((outputs), 1).to(torch.float)
-
+        output_probabilities = self.output_prob_predicter(concatenated_output.flatten())
+        
         return concatenated_output, output_probabilities
 
+
+
+class RocksampleDataProcessing():
+    """
+    Prepare data from the rocksample env for forwarding to the neural network. Also process network outputs
+
+    
+    Args:
+        n (int): size of the rocksample env
+        k (int): number of rocks in the env
+        bel_size (int): size of the belief subset
+        belief (pomdp_py.representations.distribution.Particles): object representing a set of particles. Here, belief.particles 
+        corresponds to the _values variable which internally is a list of RockSample State objects which internally have the features of 
+        the samples fed into the neural network
+        probabilities (array): probabilities of each belief state
+        history (tuple): agent's history 
+    """
+    def __init__(self, n, k, bel_size):
+        self.n = n
+        self.k = k
+        self.bel_size = bel_size
+
+
+    def cond_from_history(self, history):
+
+
+    def batch_from_particles(self, belief, probabilities):
+        assert len(belief.particles) == self.bel_size, "The number of particles must match the size of the belief subset"  
+        batch = torch.zeros(self.bel_size,k+4)
+
+        for idx, particle in enumerate(belief.particles):
+            sample_pos = particle.position
+            sample_rocktypes = list(particle.rocktypes)
+            for i in range(len(sample_rocktypes)):
+                sample_rocktypes[i] = 0. if sample_rocktypes[i] == "bad" else 1.
+            sample_terminal = particle.terminal
+            sample_terminal = 1. if sample_terminal == True else 0.
+            sample_prob = probabilities[idx]
+
+
+            sample = np.concatenate((np.array(sample_pos), np.array(sample_rocktypes), np.array([sample_terminal, sample_prob])), axis=None)
+            batch[idx] = torch.tensor(sample).to(torch.float)
+
+        return batch
+
+    def particles_from_output(self, out, probabilities):
+        out = out.detach().numpy()
+        particles = []
+        for i in range(self.bel_size):
+            sample = out[i]
+            sample_pos = (int(round(out[0])), int(round(out[1])))
+            sample_rocktypes = sample[2:self.k+1]
+            sample_rocktypes = sample_rocktypes > 0.5
+            for rocktype in sample_rocktypes:
+                rocktype = "good" if rocktype == True else "bad"
+            sample_rocktypes = tuple(sample_rocktypes)
+            sample_terminal = sample[-1]
+            sample_terminal = True if sample_terminal < 0.5 else False
+
+            particles.append(rs.State(sample_pos, sample_rocktypes, sample_terminal))
+
+        belief = pomdp_py.Particles(particles)
+        probabilities = probabilities.detach().numpy()
+
+        return belief, probabilities
 
 
 
