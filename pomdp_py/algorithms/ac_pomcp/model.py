@@ -9,6 +9,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 
+### Belief Network ###
 class LatentSpaceTf(nn.Module):
     """
     Encode/decode features into a latent space or from a latent space
@@ -173,114 +174,107 @@ class MultiHeadAutoencoder(nn.Module):
         return concatenated_output, output_probabilities
 
 
-
-class RocksampleDataProcessing():
+### Q-Network ###
+class dueling_net(nn.Module):
     """
-    Prepare data from the rocksample env for forwarding to the neural network. Also process network outputs
+    Returns the Q(a|h)
 
-    
+    Modified dueling network architecture from "Dueling Network Architectures for Deep Reinforcement Learning"
+    Implementation modified from https://nn.labml.ai/rl/dqn/model.html
+
+
     Args:
-        n (int): size of the rocksample env
-        k (int): number of rocks in the env
-        bel_size (int): size of the belief subset
-        belief (pomdp_py.representations.distribution.Particles): object representing a set of particles. Here, belief.particles 
-        corresponds to the _values variable which internally is a list of RockSample State objects which internally have the features of 
-        the samples fed into the neural network
-        probabilities (array): probabilities of each belief state
-        history (tuple): agent's history 
+        n_actions (int): number of actions in the env
+        in_dim (int): dimensionality of the input
+        latent_space_dim (int): dimensionality of the latent space of the encoding 
+        encoder_hidden_layers (list): list of the number of neurons in the hidden layers of the encoder (in order of the layers)
+        state_decoder_hidden_layers (list): list of the number of neurons in the hidden layers of the state decoder (in order of the layers)
+        advantage_decoder_hidden_layers (list): list of the number of neurons in the hidden layers of the advantage decoder (in order of the layers)
     """
-    def __init__(self, n, k, bel_size):
-        self.n = n
-        self.k = k
-        self.bel_size = bel_size
+    def __init__(self, n_actions, in_dim, encoder_hidden_layers, latent_space_dim, 
+        state_decoder_hidden_layers, advantage_decoder_hidden_layers):
+        super(dueling_net, self).__init__()
+
+        self.encoder = LatentSpaceTf(in_dim, encoder_hidden_layers, latent_space_dim)
+
+        # This head gives the state value $V$
+        self.state_value_decoder = LatentSpaceTf(latent_space_dim, state_decoder_hidden_layers, 1)
+
+        # This head gives the advantage value $A$
+        self.advantage_value_decoder = LatentSpaceTf(latent_space_dim, advantage_decoder_hidden_layers, n_actions)
 
 
-    def cond_from_history(self, history):
+    def forward(self, x):
+        # Convolution
+        encoded_input = self.encoder(x)
 
+        # $A$
+        advantage_value = self.advantage_value_decoder(encoded_input)
+        # $V$
+        state_value = self.state_value_decoder(encoded_input)
 
-    def batch_from_particles(self, belief, probabilities):
-        assert len(belief.particles) == self.bel_size, "The number of particles must match the size of the belief subset"  
-        batch = torch.zeros(self.bel_size,k+4)
+        action_score_centered = advantage_value - advantage_value.mean(dim=-1, keepdim=True)
+        q = state_value + action_score_centered
 
-        for idx, particle in enumerate(belief.particles):
-            sample_pos = particle.position
-            sample_rocktypes = list(particle.rocktypes)
-            for i in range(len(sample_rocktypes)):
-                sample_rocktypes[i] = 0. if sample_rocktypes[i] == "bad" else 1.
-            sample_terminal = particle.terminal
-            sample_terminal = 1. if sample_terminal == True else 0.
-            sample_prob = probabilities[idx]
+        return q
 
-
-            sample = np.concatenate((np.array(sample_pos), np.array(sample_rocktypes), np.array([sample_terminal, sample_prob])), axis=None)
-            batch[idx] = torch.tensor(sample).to(torch.float)
-
-        return batch
-
-    def particles_from_output(self, out, probabilities):
-        out = out.detach().numpy()
-        particles = []
-        for i in range(self.bel_size):
-            sample = out[i]
-            sample_pos = (int(round(out[0])), int(round(out[1])))
-            sample_rocktypes = sample[2:self.k+1]
-            sample_rocktypes = sample_rocktypes > 0.5
-            for rocktype in sample_rocktypes:
-                rocktype = "good" if rocktype == True else "bad"
-            sample_rocktypes = tuple(sample_rocktypes)
-            sample_terminal = sample[-1]
-            sample_terminal = True if sample_terminal < 0.5 else False
-
-            particles.append(rs.State(sample_pos, sample_rocktypes, sample_terminal))
-
-        belief = pomdp_py.Particles(particles)
-        probabilities = probabilities.detach().numpy()
-
-        return belief, probabilities
 
 
 
 ### TESTING ###
-def temp_generate_sample(n,k):
-    test_sample = torch.zeros((k+4))
-    test_sample[:2] = torch.randint(0, n-1, (2,))
-
-    mask = torch.rand(k+2)
-    mask[:-1] = mask[:-1] < 0.5
-    test_sample[2:] = mask
-
-    return test_sample
-
-def temp_generate_cond():
-    test_cond = torch.zeros((2*3))
-    for i in range(len(test_cond)):
-        if (i+1)%2 != 0:
-            test_cond[i] = torch.randint(0, 6, (1,))
-        else:
-            test_cond[i] = torch.rand(1)
-    return test_cond
-
 n, k = 5, 5
-b_size = 4
-device = 'cuda'
-batch = torch.zeros(b_size,k+4)
-for i in range(len(batch)):
-    batch[i] = temp_generate_sample(n,  k)
-
-cond = temp_generate_cond()
+num_particles = 6
+hist_dim = 10
 
 
-batch.to(torch.device(device)).to(torch.float)
-cond.to(torch.device(device)).to(torch.float)
+from rocksample_data_utils import RocksampleDataProcessing
+from pomdp_problems.rocksample import rocksample_problem as rs
+init_state, rock_locs = rs.RockSampleProblem.generate_instance(n, k)
 
-print(f"Batch {b_size} x [posx posy | {k} x rocktype | terminal+state | prob]")
-print(batch)
-print("Cond [a, o, a, o ..]")
-print(cond)
+belief_type = "uniform"
+init_belief = rs.init_particles_belief(k, num_particles, init_state, belief=belief_type)
+# print(init_belief)
 
-belief_net = MultiHeadAutoencoder(k+4, 128, 6, [2, k, 1], [64], [[64, 32], [64], [64, 32, 8]], [256, 126, 64, 8], b_size, n)
-out, prob = belief_net(batch, cond)
+data_processing = RocksampleDataProcessing(n=n, k=k, t=hist_dim, bel_size=num_particles)
 
-print(out)
-print(prob)
+
+belief_tensor = data_processing.batch_from_particles(belief=init_belief, probabilities=np.full((num_particles), float(1/num_particles)))
+cond_tensor = data_processing.cond_from_history(history=())
+
+# print("-----")
+# print(f"Belief Tensor {num_particles} x [posx posy | {k} x rocktype | terminal+state | prob]")
+# print(belief_tensor)
+# print("Conditioning [a, o, a, o ..]")
+# print(cond_tensor)
+
+belief_net = MultiHeadAutoencoder(in_dim=k+4, latent_space_dim=128, cond_dim=hist_dim, out_dims=[2, k, 1], 
+        encoder_hidden_layers=[64], decoder_hidden_layers=[[64, 32], [64], [64, 32, 8]], 
+        output_prob_predicter_hidden_layers=[256, 126, 64, 8], batch_size=num_particles, n=n)
+
+new_belief, new_probabilities = belief_net(belief_tensor, cond_tensor)
+
+
+# print("-----")
+# print(f"Model Output {num_particles} x [posx posy | {k} x rocktype | terminal+state]")
+# print(new_belief)
+# print("Probabilities")
+# print(new_probabilities)
+
+
+new_belief, new_probabilities = data_processing.particles_from_output(new_belief, new_probabilities)
+# print("-----")
+# print(new_belief)
+# print(new_probabilities)
+
+
+q_net = dueling_net(n_actions=data_processing.num_actions, in_dim=hist_dim, encoder_hidden_layers=[64], latent_space_dim=128, 
+        state_decoder_hidden_layers=[64, 32, 8], advantage_decoder_hidden_layers=[64, 32])
+
+q_values = q_net(cond_tensor)
+
+print("Q(.|h)")
+print(q_values)
+
+
+
 
