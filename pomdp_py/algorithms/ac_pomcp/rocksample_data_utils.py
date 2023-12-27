@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import pomdp_py
 from pomdp_problems.rocksample import rocksample_problem as rs
-
+import random
 
 class RocksampleDataProcessing():
     """
@@ -106,6 +106,8 @@ class RocksampleDataProcessing():
     def particles_from_output(self, out, probabilities):
         """Generate a belief instance (pomdp_py.representations.distribution.Particles) from the output of the neural network
 
+        Reinvigorate particles if the network predicted a belief subset with the same particles repeated
+
         Args:
             out (tensor): A tensor of the output of the neural network
             probabilities (array): Probabilities of each belief state
@@ -136,8 +138,23 @@ class RocksampleDataProcessing():
 
             particles.append(rs.State(sample_pos, rocktypes, sample_terminal))
 
-
-        belief = pomdp_py.Particles(particles)
         probabilities = probabilities.detach().numpy()
+
+        # It is possible that the neural network maps all previous particles to the same output particle. This is okay. However, for 
+        # better exploration, new particles are added whenever this happens
+        num_predicted_particles = len(set(particles)) 
+        num_particles_to_add = self.bel_size - num_predicted_particles 
+        if num_particles_to_add > 0:
+            for _ in range(num_particles_to_add):
+                rocktypes = []
+                for i in range(self.k):
+                    rocktypes.append(rs.RockType.random())
+                rocktypes = tuple(rocktypes)
+                particles.append(rs.State((random.randint(0, self.n-1), random.randint(0, self.n-1)), rocktypes, False))
+
+            probabilities[num_predicted_particles:] = np.full((num_particles_to_add), (1-np.sum(probabilities[:num_predicted_particles]))/num_particles_to_add)
+
+
+        belief = pomdp_py.Particles(particles)        
 
         return belief, probabilities

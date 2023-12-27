@@ -263,17 +263,17 @@ new_belief, new_probabilities = belief_net(belief_tensor, cond_tensor)
 
 new_belief, new_probabilities = data_processing.particles_from_output(new_belief, new_probabilities)
 # print("-----")
-# print(new_belief)
-# print(new_probabilities)
+print(new_belief)
+print(new_probabilities)
 
 
-q_net = dueling_net(n_actions=data_processing.num_actions, in_dim=hist_dim, encoder_hidden_layers=[64], latent_space_dim=128, 
-        state_decoder_hidden_layers=[64, 32, 8], advantage_decoder_hidden_layers=[64, 32])
+# q_net = dueling_net(n_actions=data_processing.num_actions, in_dim=hist_dim, encoder_hidden_layers=[64], latent_space_dim=128, 
+#         state_decoder_hidden_layers=[64, 32, 8], advantage_decoder_hidden_layers=[64, 32])
 
-q_values = q_net(cond_tensor)
+# q_values = q_net(cond_tensor)
 
-print("Q(.|h)")
-print(q_values)
+# print("Q(.|h)")
+# print(q_values)
 
 
 
