@@ -221,59 +221,59 @@ class dueling_net(nn.Module):
 
 
 
-### TESTING ###
-n, k = 5, 5
-num_particles = 6
-hist_dim = 10
+# ### TESTING ###
+# n, k = 5, 5
+# num_particles = 6
+# hist_dim = 10
 
 
-from rocksample_data_utils import RocksampleDataProcessing
-from pomdp_problems.rocksample import rocksample_problem as rs
-init_state, rock_locs = rs.RockSampleProblem.generate_instance(n, k)
+# from rocksample_data_utils import RocksampleDataProcessing
+# from pomdp_problems.rocksample import rocksample_problem as rs
+# init_state, rock_locs = rs.RockSampleProblem.generate_instance(n, k)
 
-belief_type = "uniform"
-init_belief = rs.init_particles_belief(k, num_particles, init_state, belief=belief_type)
-# print(init_belief)
+# belief_type = "uniform"
+# init_belief = rs.init_particles_belief(k, num_particles, init_state, belief=belief_type)
+# # print(init_belief)
 
-data_processing = RocksampleDataProcessing(n=n, k=k, t=hist_dim, bel_size=num_particles)
-
-
-belief_tensor = data_processing.batch_from_particles(belief=init_belief, probabilities=np.full((num_particles), float(1/num_particles)))
-cond_tensor = data_processing.cond_from_history(history=())
-
-# print("-----")
-# print(f"Belief Tensor {num_particles} x [posx posy | {k} x rocktype | terminal+state | prob]")
-# print(belief_tensor)
-# print("Conditioning [a, o, a, o ..]")
-# print(cond_tensor)
-
-belief_net = MultiHeadAutoencoder(in_dim=k+4, latent_space_dim=128, cond_dim=hist_dim, out_dims=[2, k, 1], 
-        encoder_hidden_layers=[64], decoder_hidden_layers=[[64, 32], [64], [64, 32, 8]], 
-        output_prob_predicter_hidden_layers=[256, 126, 64, 8], batch_size=num_particles, n=n)
-
-new_belief, new_probabilities = belief_net(belief_tensor, cond_tensor)
+# data_processing = RocksampleDataProcessing(n=n, k=k, t=hist_dim, bel_size=num_particles)
 
 
-# print("-----")
-# print(f"Model Output {num_particles} x [posx posy | {k} x rocktype | terminal+state]")
+# belief_tensor = data_processing.batch_from_particles(belief=init_belief, probabilities=np.full((num_particles), float(1/num_particles)))
+# cond_tensor = data_processing.cond_from_history(history=())
+
+# # print("-----")
+# # print(f"Belief Tensor {num_particles} x [posx posy | {k} x rocktype | terminal+state | prob]")
+# # print(belief_tensor)
+# # print("Conditioning [a, o, a, o ..]")
+# # print(cond_tensor)
+
+# belief_net = MultiHeadAutoencoder(in_dim=k+4, latent_space_dim=128, cond_dim=hist_dim, out_dims=[2, k, 1], 
+#         encoder_hidden_layers=[64], decoder_hidden_layers=[[64, 32], [64], [64, 32, 8]], 
+#         output_prob_predicter_hidden_layers=[256, 126, 64, 8], batch_size=num_particles, n=n)
+
+# new_belief, new_probabilities = belief_net(belief_tensor, cond_tensor)
+
+
+# # print("-----")
+# # print(f"Model Output {num_particles} x [posx posy | {k} x rocktype | terminal+state]")
+# # print(new_belief)
+# # print("Probabilities")
+# # print(new_probabilities)
+
+
+# new_belief, new_probabilities = data_processing.particles_from_output(new_belief, new_probabilities)
+# # print("-----")
 # print(new_belief)
-# print("Probabilities")
 # print(new_probabilities)
 
 
-new_belief, new_probabilities = data_processing.particles_from_output(new_belief, new_probabilities)
-# print("-----")
-print(new_belief)
-print(new_probabilities)
+# # q_net = dueling_net(n_actions=data_processing.num_actions, in_dim=hist_dim, encoder_hidden_layers=[64], latent_space_dim=128, 
+# #         state_decoder_hidden_layers=[64, 32, 8], advantage_decoder_hidden_layers=[64, 32])
 
+# # q_values = q_net(cond_tensor)
 
-# q_net = dueling_net(n_actions=data_processing.num_actions, in_dim=hist_dim, encoder_hidden_layers=[64], latent_space_dim=128, 
-#         state_decoder_hidden_layers=[64, 32, 8], advantage_decoder_hidden_layers=[64, 32])
-
-# q_values = q_net(cond_tensor)
-
-# print("Q(.|h)")
-# print(q_values)
+# # print("Q(.|h)")
+# # print(q_values)
 
 
 

@@ -82,6 +82,13 @@ cdef class VNode(TreeNode):
     def __repr__(self):
         return self.__str__()
 
+    def return_children_values(self):
+        q_value_dict = {}
+        for action in self.children:
+            q_value_dict[str(action)] = self[action].value
+        
+        return q_value_dict
+
     def print_children_value(self):
         for action in self.children:
             print("   action %s: %.3f" % (str(action), self[action].value))

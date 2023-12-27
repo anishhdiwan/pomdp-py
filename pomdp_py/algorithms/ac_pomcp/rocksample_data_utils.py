@@ -158,3 +158,35 @@ class RocksampleDataProcessing():
         belief = pomdp_py.Particles(particles)        
 
         return belief, probabilities
+
+
+    def qval_array_from_dict(self, bel_state_conditioned_qvalues):
+        """A numpy array of action values given a list of dictionaries of action values for each belief state
+
+        Args:
+            bel_state_conditioned_qvalues (list(dict)): A list of dictionaries of action values, one dict per belief state
+
+        Returns:
+            A numpy array of the same action values
+
+        """
+        # Reverse the actions dict
+        rev_actions = dict((v, k) for k, v in self.actions.items())
+        qval_array = np.zeros((len(bel_state_conditioned_qvalues), self.num_actions))
+        
+        for idx, qval_dict in enumerate(bel_state_conditioned_qvalues):
+            actions_encountered = set(qval_dict.keys())
+            qvals = np.zeros((self.num_actions))
+            for i in range(len(qvals)):
+                if rev_actions[i] in actions_encountered:
+                    qvals[i] = qval_dict[rev_actions[i]]
+                else:
+                    qvals[i] = 0.0
+
+            qval_array[idx] = qvals
+
+        return qval_array
+
+
+
+
