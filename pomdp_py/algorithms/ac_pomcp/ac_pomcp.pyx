@@ -19,6 +19,10 @@ from tqdm import tqdm
 from .model import dueling_net, MultiHeadAutoencoder
 
 
+
+
+
+
 cdef class AC_POMCP(POUCT):
 
     """AC_POMCP description ..."""
@@ -28,8 +32,7 @@ cdef class AC_POMCP(POUCT):
                  discount_factor=0.9, exploration_const=math.sqrt(2),
                  num_visits_init=0, value_init=0,
                  rollout_policy=RandomRollout(), action_prior=None,
-                 show_progress=False, pbar_update_interval=5,
-                 belief_net=None, q_net=None, env_data_processing=None, init_bel_prob=None):
+                 show_progress=False, pbar_update_interval=5):
         super().__init__(max_depth=max_depth,
                          planning_time=planning_time,
                          num_sims=num_sims,
@@ -48,20 +51,34 @@ cdef class AC_POMCP(POUCT):
         # self.q_net = q_net
         # self.env_data_processing = env_data_processing
         # self.bel_prob = init_bel_prob
+        # self.qnet_lr = qnet_lr
+        # self.belief_net_lr = belief_net_lr
 
 
-    def updateNetworks(self, hist_conditioned_qvalues):
-        # TODO: write network update procedure
-        pass
+    # cdef public updateNetworks(self, Agent agent, float reward, float best_action_value):
+    #     # QNet Loss 
+    #     pred_q_values = self.q_net(self.hist_tensor)
+    #     hist_conditioned_qvalues = self.getHistoryConditionedQValues.copy()
+    #     assert pred_q_values.shape == hist_conditioned_qvalues.shape, "The shapes of Q(.|h) and Qnet(h) must match"
 
-    def getHistoryConditionedQValues(self, bel_state_conditioned_qvalues, probabilities):
-        # Get Q(.|h) = SUM (p(s) * Q(.|s))
-        # bel_state_conditioned_qvalues is a dictionary of {action: value} pairs for each particle in the belief
-        bel_state_conditioned_qvalues = self.env_data_processing.qval_array_from_dict(bel_state_conditioned_qvalues)
 
-        hist_conditioned_qvalues = np.average(bel_state_conditioned_qvalues, axis=0, weights=prob)
+    #     mask = ma.masked_where(hist_conditioned_qvalues==None, hist_conditioned_qvalues)
+    #     hist_conditioned_qvalues[mask.mask] = 0.
+    #     pred_q_values[mask.mask] = 0.
 
-        retrun hist_conditioned_qvalues
+    #     qnet_loss = nn.MSELoss(pred_q_values, hist_conditioned_qvalues)
+
+    #     # Belief Net Loss
+    #     # Assuming that the agent's history agent.history has been updated via agent.update_history() and a reward has been seen via env.state_transition()
+    #     next_hist_tensor = self.env_data_processing.cond_from_history(agent.history)
+    #     best_next_action = torch.max(self.q_net(next_hist_tensor))
+    #     delta = reward + self.discount_factor*best_next_action - best_action_value
+
+    #     # Update
+
+
+
+    #     return qnet_loss, delta
 
 
 
@@ -74,13 +91,11 @@ cdef class AC_POMCP(POUCT):
         self._agent = agent   # switch focus on planning for the given agent
         if not hasattr(self._agent, "tree"):
             self._agent.add_attr("tree", None)
-        action, time_taken, sims_count, hist_conditioned_qvalues = self._search()
+        action, action_value, time_taken, sims_count = self._search()
         self._last_num_sims = sims_count
         self._last_planning_time = time_taken
 
-
-        ### Add update net ###
-        return action
+        return action, action_value
 
 
     ### NEW ###
@@ -103,8 +118,8 @@ cdef class AC_POMCP(POUCT):
         # TODO: torch networks and other classes as cython class variables
         # Compute new belief given the history and old belief
         # belief_tensor = self.env_data_processing.batch_from_particles(belief=self._agent.belief, probabilities=self.bel_prob)
-        # cond_tensor = self.env_data_processing.cond_from_history(self._agent.history)
-        # self._agent.belief, self.bel_prob = self.belief_net(belief_tensor, cond_tensor)
+        # self.hist_tensor = self.env_data_processing.cond_from_history(self._agent.history)
+        # self._agent.belief, self.bel_prob = self.belief_net(belief_tensor, self.hist_tensor)
 
         bel_state_conditioned_qvalues = []
         for state in self._agent.belief.particles:
@@ -151,10 +166,9 @@ cdef class AC_POMCP(POUCT):
 
         hist_conditioned_qvalues = self.getHistoryConditionedQValues(bel_state_conditioned_qvalues, self.bel_prob)
         # TODO make a new action or somehow get it from the tree
-        best_action = Action()
-        
-        
-        return best_action, time_taken, sims_count, hist_conditioned_qvalues
+        best_action = Action()        
+        best_action_value = best_action.value
+        return best_action, best_action_value, time_taken, sims_count 
 
 
 

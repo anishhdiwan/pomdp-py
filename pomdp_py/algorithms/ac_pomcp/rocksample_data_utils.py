@@ -161,7 +161,7 @@ class RocksampleDataProcessing():
 
 
     def qval_array_from_dict(self, bel_state_conditioned_qvalues):
-        """A numpy array of action values given a list of dictionaries of action values for each belief state
+        """Returns a numpy array of action values given a list of dictionaries of action values for each belief state
 
         Args:
             bel_state_conditioned_qvalues (list(dict)): A list of dictionaries of action values, one dict per belief state
@@ -181,7 +181,7 @@ class RocksampleDataProcessing():
                 if rev_actions[i] in actions_encountered:
                     qvals[i] = qval_dict[rev_actions[i]]
                 else:
-                    qvals[i] = 0.0
+                    qvals[i] = None
 
             qval_array[idx] = qvals
 

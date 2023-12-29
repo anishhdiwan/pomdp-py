@@ -220,6 +220,88 @@ class dueling_net(nn.Module):
 
 
 
+class Network_Utils():
+    """
+    Utility functions for the qvalue and belief networks
+
+    Args:
+        belief_net (nn.Module): Belief network
+        q_net (nn.Module): Q value network
+        env_data_processing (class): Data processing utils for the environment
+        bel_prob (ndarray): Probabilities of each belief state
+        qnet_lr (float): q network learning rate
+        belnet_lr (float): belief network learning rate
+        init_bel_prob (ndarray): initial belief probabilities
+
+    """
+    def __init__(self, belief_net, q_net, env_data_processing, init_bel_prob, qnet_lr, belnet_lr, init_bel_prob):
+        self.belief_net = belief_net
+        self.q_net = q_net
+        self.env_data_processing = env_data_processing
+        self.bel_prob = init_bel_prob
+        self.qnet_lr = qnet_lr
+        self.belnet_lr = belnet_lr
+        self.hist_tensor = None
+
+        self.qnet_optim = optim.Adam(self.q_net.parameters(), lr=self.qnet_lr, weight_decay=1e-5) # Weight decay is L2 regularization
+        self.belnet_optim = optim.Adam(self.belief_net.parameters(), lr=self.belnet_lr, weight_decay=1e-5) # Weight decay is L2 regularization
+
+    def getHistoryConditionedQValues(self, bel_state_conditioned_qvalues, probabilities):
+        # Get Q(.|h) = SUM (p(s) * Q(.|s))
+        # bel_state_conditioned_qvalues is a dictionary of {action: value} pairs for each particle in the belief
+        bel_state_conditioned_qvalues = self.env_data_processing.qval_array_from_dict(bel_state_conditioned_qvalues)
+
+        hist_conditioned_qvalues = np.average(bel_state_conditioned_qvalues, axis=0, weights=prob)
+        self.hist_conditioned_qvalues = hist_conditioned_qvalues
+
+        return hist_conditioned_qvalues
+
+    def getNewBelief(self, agent):
+        # Compute the new belief state and probabilities given the old ones
+        belief_tensor = self.env_data_processing.batch_from_particles(belief=agent.belief, probabilities=self.bel_prob)
+        self.hist_tensor = self.env_data_processing.cond_from_history(agent.history)
+        new_belief, new_bel_prob = self.belief_net(belief_tensor, self.hist_tensor)
+        self.bel_prob = new_bel_prob
+        return new_belief, new_bel_prob
+
+
+    def updateNetworks(self, agent, reward, best_action_value):
+        # QNet Loss 
+        pred_q_values = self.q_net(self.hist_tensor)
+        hist_conditioned_qvalues = self.hist_conditioned_qvalues.copy()
+        assert pred_q_values.shape == hist_conditioned_qvalues.shape, "The shapes of Q(.|h) and Qnet(h) must match"
+
+        mask = ma.masked_where(hist_conditioned_qvalues==None, hist_conditioned_qvalues)
+        hist_conditioned_qvalues[mask.mask] = 0.
+        pred_q_values[mask.mask] = 0.
+
+        qnet_loss = nn.MSELoss(pred_q_values, hist_conditioned_qvalues)
+
+        # Belief Net Loss
+        # Assuming that the agent's history agent.history has been updated via agent.update_history() and a reward has been seen via env.state_transition()
+        next_hist_tensor = self.env_data_processing.cond_from_history(agent.history)
+        best_next_action = torch.max(self.q_net(next_hist_tensor))
+
+        # delta = R + gamma*max(Q(hnext)) - Q(areal) 
+        # Here R + gamma*max(Q(hnext)) is the return in bootstrap form. We are trying to change Q(areal) so that it is close to the return
+        # Q(areal) = argmax( Q(.|h) ) = argmax( bel_prob * some_vector_from_sim ) = argmax( bel_net(old_bet, hist) * some_vector )
+        # This means backward() will compute gradients for the bel_net 
+        bootstrapped_return = reward + self.discount_factor*best_next_action
+
+        belnet_loss = nn.MSE(bootstrapped_return, best_action_value)
+
+        # Update
+        self.qnet_optim.zero_grad()
+        qnet_loss.backward()
+        self.qnet_optim.step()
+
+        self.belnet_optim.zero_grad()
+        belnet_loss.backward()
+        self.belnet_optim.step()
+
+
+        return qnet_loss, delta
+
 
 # ### TESTING ###
 # n, k = 5, 5
