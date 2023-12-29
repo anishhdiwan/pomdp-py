@@ -42,6 +42,11 @@ cdef class AC_POMCP(POUCT):
 
     ### NEW ###
     cpdef public plan(self, Agent agent):
+        """
+        Instead of directly returning the best action, the plan() method from POUCT is modified to return action values conditioned on the belief state.
+
+        History conditioned action values are computed out of the loop with other vectors computed through a parameterised function
+        """
         cdef Action action
         cdef float time_taken
         cdef int sims_count
@@ -49,11 +54,11 @@ cdef class AC_POMCP(POUCT):
         self._agent = agent   # switch focus on planning for the given agent
         if not hasattr(self._agent, "tree"):
             self._agent.add_attr("tree", None)
-        action, action_value, time_taken, sims_count = self._search()
+        bel_state_conditioned_qvalues, time_taken, sims_count = self._search()
         self._last_num_sims = sims_count
         self._last_planning_time = time_taken
 
-        return action, action_value
+        return bel_state_conditioned_qvalues
 
 
     ### NEW ###
@@ -114,16 +119,11 @@ cdef class AC_POMCP(POUCT):
             bel_state_conditioned_qvalues.append(action_values)
 
 
-            # best_action = self._agent.tree.argmax()
+            # Reset the tree for the next belief state
             self._agent.tree = None
 
-        # TODO make a new action or somehow get it from the tree
-        # TODO somehow send this outside the class
-        hist_conditioned_qvalues = self.getHistoryConditionedQValues(bel_state_conditioned_qvalues, self.bel_prob)
-        
-        best_action = Action()        
-        best_action_value = best_action.value
-        return best_action, best_action_value, time_taken, sims_count 
+
+        return bel_state_conditioned_qvalues, time_taken, sims_count 
 
 
 
