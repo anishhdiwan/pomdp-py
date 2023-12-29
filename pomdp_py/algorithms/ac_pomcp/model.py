@@ -234,7 +234,7 @@ class Network_Utils():
         init_bel_prob (ndarray): initial belief probabilities
 
     """
-    def __init__(self, belief_net, q_net, env_data_processing, init_bel_prob, qnet_lr, belnet_lr, init_bel_prob):
+    def __init__(self, belief_net, q_net, env_data_processing, init_bel_prob, qnet_lr, belnet_lr):
         self.belief_net = belief_net
         self.q_net = q_net
         self.env_data_processing = env_data_processing

@@ -16,12 +16,6 @@ import random
 import math
 from tqdm import tqdm
 
-from .model import dueling_net, MultiHeadAutoencoder
-
-
-
-
-
 
 cdef class AC_POMCP(POUCT):
 
@@ -44,42 +38,6 @@ cdef class AC_POMCP(POUCT):
                          action_prior=action_prior,
                          show_progress=show_progress,
                          pbar_update_interval=pbar_update_interval)
-
-        # TODO: torch networks and other classes as cython class variables
-        # Defining the belief and q networks and any data processing utils
-        # self.belief_net = belief_net
-        # self.q_net = q_net
-        # self.env_data_processing = env_data_processing
-        # self.bel_prob = init_bel_prob
-        # self.qnet_lr = qnet_lr
-        # self.belief_net_lr = belief_net_lr
-
-
-    # cdef public updateNetworks(self, Agent agent, float reward, float best_action_value):
-    #     # QNet Loss 
-    #     pred_q_values = self.q_net(self.hist_tensor)
-    #     hist_conditioned_qvalues = self.getHistoryConditionedQValues.copy()
-    #     assert pred_q_values.shape == hist_conditioned_qvalues.shape, "The shapes of Q(.|h) and Qnet(h) must match"
-
-
-    #     mask = ma.masked_where(hist_conditioned_qvalues==None, hist_conditioned_qvalues)
-    #     hist_conditioned_qvalues[mask.mask] = 0.
-    #     pred_q_values[mask.mask] = 0.
-
-    #     qnet_loss = nn.MSELoss(pred_q_values, hist_conditioned_qvalues)
-
-    #     # Belief Net Loss
-    #     # Assuming that the agent's history agent.history has been updated via agent.update_history() and a reward has been seen via env.state_transition()
-    #     next_hist_tensor = self.env_data_processing.cond_from_history(agent.history)
-    #     best_next_action = torch.max(self.q_net(next_hist_tensor))
-    #     delta = reward + self.discount_factor*best_next_action - best_action_value
-
-    #     # Update
-
-
-
-    #     return qnet_loss, delta
-
 
 
     ### NEW ###
@@ -115,11 +73,6 @@ cdef class AC_POMCP(POUCT):
                 total = self._planning_time
             pbar = tqdm(total=total)
 
-        # TODO: torch networks and other classes as cython class variables
-        # Compute new belief given the history and old belief
-        # belief_tensor = self.env_data_processing.batch_from_particles(belief=self._agent.belief, probabilities=self.bel_prob)
-        # self.hist_tensor = self.env_data_processing.cond_from_history(self._agent.history)
-        # self._agent.belief, self.bel_prob = self.belief_net(belief_tensor, self.hist_tensor)
 
         bel_state_conditioned_qvalues = []
         for state in self._agent.belief.particles:
@@ -164,8 +117,10 @@ cdef class AC_POMCP(POUCT):
             # best_action = self._agent.tree.argmax()
             self._agent.tree = None
 
-        hist_conditioned_qvalues = self.getHistoryConditionedQValues(bel_state_conditioned_qvalues, self.bel_prob)
         # TODO make a new action or somehow get it from the tree
+        # TODO somehow send this outside the class
+        hist_conditioned_qvalues = self.getHistoryConditionedQValues(bel_state_conditioned_qvalues, self.bel_prob)
+        
         best_action = Action()        
         best_action_value = best_action.value
         return best_action, best_action_value, time_taken, sims_count 
