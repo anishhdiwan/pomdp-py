@@ -54,6 +54,7 @@ cdef class AC_POMCP(POUCT):
         self._agent = agent   # switch focus on planning for the given agent
         if not hasattr(self._agent, "tree"):
             self._agent.add_attr("tree", None)
+
         bel_state_conditioned_qvalues, time_taken, sims_count = self._search()
         self._last_num_sims = sims_count
         self._last_planning_time = time_taken
@@ -127,3 +128,41 @@ cdef class AC_POMCP(POUCT):
 
 
 
+    cpdef public update(self, Agent agent, Action real_action, Observation real_observation):
+        """
+        Add the real_action and real_observation to agent.tree (which is currently None). Then prune all other branches 
+        And set agent.tree[real_action][real_observation] as the new root node
+
+        Assume that the agent's history has been updated after taking real_action
+        and receiving real_observation.
+        """
+
+        # Define the tree as a new root node with the previous (un-updated) history 
+        if agent.tree is None:
+            root = RootVNode(self._num_visits_init, agent.history[:-2])
+            agent.tree = root
+
+        # Expand the new tree with real_action and real_observation
+        if agent.tree[real_action] is None:
+            selected_action = QNode(self._num_visits_init,
+                                        self._value_init)
+            agent.tree[real_action] = selected_action
+
+        if agent.tree[real_action][real_observation] is None:
+            agent.tree[real_action][real_observation] =  self._VNode()
+
+
+        if not hasattr(agent, "tree") or agent.tree is None:
+            print("Warning: agent does not have tree. Have you planned yet?")
+            return
+
+        if real_action not in agent.tree\
+           or real_observation not in agent.tree[real_action]:
+            agent.tree = None  # replan, if real action or observation differs from all branches
+        elif agent.tree[real_action][real_observation] is not None:
+            # Update the tree (prune)
+            agent.tree = RootVNode.from_vnode(
+                agent.tree[real_action][real_observation],
+                agent.history)
+        else:
+            raise ValueError("Unexpected state; child should not be None")
