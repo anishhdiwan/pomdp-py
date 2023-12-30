@@ -258,7 +258,7 @@ class Network_Utils():
         # bel_state_conditioned_qvalues is a dictionary of {action: value} pairs for each particle in the belief
         bel_state_conditioned_qvalues = self.env_data_processing.qval_array_from_dict(bel_state_conditioned_qvalues)
 
-        hist_conditioned_qvalues = np.average(bel_state_conditioned_qvalues, axis=0, weights=prob)
+        hist_conditioned_qvalues = np.average(bel_state_conditioned_qvalues, axis=0, weights=probabilities)
         self.hist_conditioned_qvalues = hist_conditioned_qvalues
 
         return hist_conditioned_qvalues
@@ -269,6 +269,8 @@ class Network_Utils():
         self.hist_tensor = self.env_data_processing.cond_from_history(agent.history)
         new_belief, new_bel_prob = self.belief_net(belief_tensor, self.hist_tensor)
         self.bel_prob = new_bel_prob
+
+        new_belief, new_bel_prob = self.env_data_processing.particles_from_output(new_belief, new_bel_prob)
         return new_belief, new_bel_prob
 
 

@@ -26,6 +26,8 @@ from pomdp_py import visual
 
 # Adding the AC-POMCP algo
 from pomdp_py.algorithms.ac_pomcp.ac_pomcp import AC_POMCP
+from pomdp_py.algorithms.ac_pomcp.model import Network_Utils, dueling_net, MultiHeadAutoencoder
+from pomdp_py.algorithms.ac_pomcp.rocksample_data_utils import RocksampleDataProcessing
 
 # Templates & Utilities
 from pomdp_py.utils.templates import *

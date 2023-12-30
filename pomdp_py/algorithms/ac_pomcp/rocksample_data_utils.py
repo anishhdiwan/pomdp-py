@@ -163,8 +163,7 @@ class RocksampleDataProcessing():
 
             probabilities[num_predicted_particles:] = np.full((num_particles_to_add), (1-np.sum(probabilities[:num_predicted_particles]))/num_particles_to_add)
 
-
-        belief = pomdp_py.Particles(particles)        
+        belief = pomdp_py.Particles(particles)
 
         return belief, probabilities
 
