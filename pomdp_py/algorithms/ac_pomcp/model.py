@@ -246,6 +246,13 @@ class Network_Utils():
         self.qnet_optim = optim.Adam(self.q_net.parameters(), lr=self.qnet_lr, weight_decay=1e-5) # Weight decay is L2 regularization
         self.belnet_optim = optim.Adam(self.belief_net.parameters(), lr=self.belnet_lr, weight_decay=1e-5) # Weight decay is L2 regularization
 
+    
+    def argmax(self, hist_conditioned_qvalues):
+        idx = np.argmax(hist_conditioned_qvalues, axis=0)
+        actions_dict = dict((v, k) for k, v in self.env_data_processing.actions.items())
+        action_name = actions_dict[idx]
+        return action_name, action_value
+
     def getHistoryConditionedQValues(self, bel_state_conditioned_qvalues, probabilities):
         # Get Q(.|h) = SUM (p(s) * Q(.|s))
         # bel_state_conditioned_qvalues is a dictionary of {action: value} pairs for each particle in the belief

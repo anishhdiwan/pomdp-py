@@ -38,6 +38,15 @@ class RocksampleDataProcessing():
         for i in range(self.k):
             self.actions[f"check-{i}"] = float(i + self.num_fixed_actions)
 
+        check_actions = set({rs.CheckAction(rock_id) for rock_id in range(self.k)})
+        _move_actions = {rs.MoveEast, rs.MoveWest, rs.MoveNorth, rs.MoveSouth}
+        _other_actions = {rs.SampleAction()} | check_actions
+        _all_actions = _move_actions | _other_actions
+
+        self.actions_dict = dict()
+        for item in _all_actions:
+            self.actions_dict[item.name] = item
+
 
     def cond_from_history(self, history):
         """Generate a conditioning vector given the history
