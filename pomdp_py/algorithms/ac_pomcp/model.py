@@ -1,4 +1,5 @@
 import numpy as np
+import numpy.ma as ma
 import pomdp_py
 from pomdp_problems.rocksample import rocksample_problem as rs
 import random
@@ -234,14 +235,15 @@ class Network_Utils():
         init_bel_prob (ndarray): initial belief probabilities
 
     """
-    def __init__(self, belief_net, q_net, env_data_processing, init_bel_prob, qnet_lr, belnet_lr):
-        self.belief_net = belief_net
-        self.q_net = q_net
+    def __init__(self, belief_net, q_net, env_data_processing, init_bel_prob, qnet_lr, belnet_lr, discount_factor):
+        self.belief_net = belief_net.to(torch.float)
+        self.q_net = q_net.to(torch.float)
         self.env_data_processing = env_data_processing
         self.bel_prob = init_bel_prob
         self.qnet_lr = qnet_lr
         self.belnet_lr = belnet_lr
         self.hist_tensor = None
+        self.discount_factor = discount_factor
 
         self.qnet_optim = optim.Adam(self.q_net.parameters(), lr=self.qnet_lr, weight_decay=1e-5) # Weight decay is L2 regularization
         self.belnet_optim = optim.Adam(self.belief_net.parameters(), lr=self.belnet_lr, weight_decay=1e-5) # Weight decay is L2 regularization
@@ -251,14 +253,15 @@ class Network_Utils():
         idx = np.argmax(hist_conditioned_qvalues, axis=0)
         actions_dict = dict((v, k) for k, v in self.env_data_processing.actions.items())
         action_name = actions_dict[idx]
+        action_value = hist_conditioned_qvalues[idx]
         return action_name, action_value
 
     def getHistoryConditionedQValues(self, bel_state_conditioned_qvalues, probabilities):
         # Get Q(.|h) = SUM (p(s) * Q(.|s))
         # bel_state_conditioned_qvalues is a dictionary of {action: value} pairs for each particle in the belief
         bel_state_conditioned_qvalues = self.env_data_processing.qval_array_from_dict(bel_state_conditioned_qvalues)
-
-        hist_conditioned_qvalues = np.average(bel_state_conditioned_qvalues, axis=0, weights=probabilities)
+        # print(bel_state_conditioned_qvalues)
+        hist_conditioned_qvalues = np.nan_to_num(np.average(bel_state_conditioned_qvalues, axis=0, weights=probabilities))
         self.hist_conditioned_qvalues = hist_conditioned_qvalues
 
         return hist_conditioned_qvalues
@@ -284,7 +287,7 @@ class Network_Utils():
         hist_conditioned_qvalues[mask.mask] = 0.
         pred_q_values[mask.mask] = 0.
 
-        qnet_loss = nn.MSELoss(pred_q_values, hist_conditioned_qvalues)
+        qnet_loss = F.mse_loss(pred_q_values, torch.tensor(hist_conditioned_qvalues))
 
         # Belief Net Loss
         # Assuming that the agent's history agent.history has been updated via agent.update_history() and a reward has been seen via env.state_transition()
@@ -297,19 +300,19 @@ class Network_Utils():
         # This means backward() will compute gradients for the bel_net 
         bootstrapped_return = reward + self.discount_factor*best_next_action
 
-        belnet_loss = nn.MSE(bootstrapped_return, best_action_value)
+        belnet_loss = F.mse_loss(bootstrapped_return, torch.tensor(best_action_value))
 
         # Update
         self.qnet_optim.zero_grad()
-        qnet_loss.backward()
+        # qnet_loss.backward()
         self.qnet_optim.step()
 
         self.belnet_optim.zero_grad()
-        belnet_loss.backward()
+        # belnet_loss.backward()
         self.belnet_optim.step()
 
 
-        return qnet_loss, delta
+        return qnet_loss, belnet_loss
 
 
 # ### TESTING ###

@@ -29,14 +29,14 @@ class RocksampleDataProcessing():
         self.num_actions = k + 5
 
         self.actions = {
-        "move-North": 0.,
-        "move-South": 1.,
-        "move-East": 2.,
-        "move-West": 3.,
-        "sample": 4., 
+        "move-NORTH": 0,
+        "move-SOUTH": 1,
+        "move-EAST": 2,
+        "move-WEST": 3,
+        "sample": 4, 
         }
         for i in range(self.k):
-            self.actions[f"check-{i}"] = float(i + self.num_fixed_actions)
+            self.actions[f"check-{i}"] = int(i + self.num_fixed_actions)
 
         check_actions = set({rs.CheckAction(rock_id) for rock_id in range(self.k)})
         _move_actions = {rs.MoveEast, rs.MoveWest, rs.MoveNorth, rs.MoveSouth}
@@ -61,14 +61,26 @@ class RocksampleDataProcessing():
 
         """
         assert len(history) < self.t, "t (the size of the tensor of history) must not be less than the size of the history"
-        history = list(history)
+        
 
+        # history = ((a,o), ...)
+        # Flatten to one list
+        history_flat = []
+        for hist_tuple in history:
+            for entry in hist_tuple:
+                history_flat.append(entry)
+        history = history_flat
+
+        # Convert history objects to floats
         for idx, entry in enumerate(history):
             if isinstance(entry, pomdp_py.Action):
                 history[idx] = self.actions[entry.name]
 
             if isinstance(entry, pomdp_py.Observation):
-                history[idx] = entry.quality
+                if entry.quality == None:
+                    history[idx] = 0
+                else:
+                    history[idx] = entry.quality
 
         if len(history) == self.t:
             return torch.tensor(np.array(history)).to(torch.float)
@@ -95,6 +107,8 @@ class RocksampleDataProcessing():
         """
         assert len(belief.particles) == self.bel_size, "The number of particles must match the size of the belief subset"  
         batch = torch.zeros(self.bel_size,self.k+4)
+        if torch.is_tensor(probabilities):
+            probabilities = probabilities.detach().numpy()
 
         for idx, particle in enumerate(belief.particles):
             sample_pos = particle.position
@@ -106,7 +120,7 @@ class RocksampleDataProcessing():
             sample_prob = probabilities[idx]
 
 
-            sample = np.concatenate((np.array(sample_pos), np.array(sample_rocktypes), np.array([sample_terminal, sample_prob])), axis=None)
+            sample = np.concatenate((np.array(sample_pos), np.array(sample_rocktypes), sample_terminal, sample_prob), axis=None)
             batch[idx] = torch.tensor(sample).to(torch.float)
 
         return batch
@@ -148,6 +162,9 @@ class RocksampleDataProcessing():
             particles.append(rs.State(sample_pos, rocktypes, sample_terminal))
 
         probabilities = probabilities.detach().numpy()
+
+        # Drop duplicates
+        particles = list(set(particles))
 
         # It is possible that the neural network maps all previous particles to the same output particle. This is okay. However, for 
         # better exploration, new particles are added whenever this happens

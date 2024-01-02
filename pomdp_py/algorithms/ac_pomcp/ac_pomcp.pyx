@@ -86,6 +86,7 @@ cdef class AC_POMCP(POUCT):
 
             start_time = time.time()
             while True:
+                # print(f"Search Tree: {self._agent.tree}")
                 ## Note: the tree node with () history will have
                 ## the init belief given to the agent.
 
@@ -139,7 +140,7 @@ cdef class AC_POMCP(POUCT):
 
         # Define the tree as a new root node with the previous (un-updated) history 
         if agent.tree is None:
-            root = RootVNode(self._num_visits_init, agent.history[:-2])
+            root = RootVNode(self._num_visits_init, agent.history[:-1])
             agent.tree = root
 
         # Expand the new tree with real_action and real_observation
