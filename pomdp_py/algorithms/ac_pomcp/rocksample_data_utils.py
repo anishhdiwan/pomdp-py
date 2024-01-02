@@ -60,9 +60,6 @@ class RocksampleDataProcessing():
             Torch tensor of some t step history. Necessary padding applied if len(history) < 10
 
         """
-        assert len(history) < self.t, "t (the size of the tensor of history) must not be less than the size of the history"
-        
-
         # history = ((a,o), ...)
         # Flatten to one list
         history_flat = []
@@ -70,6 +67,8 @@ class RocksampleDataProcessing():
             for entry in hist_tuple:
                 history_flat.append(entry)
         history = history_flat
+
+        # assert len(history) < self.t, "t (the size of the tensor of history) must not be less than the size of the history"
 
         # Convert history objects to floats
         for idx, entry in enumerate(history):
@@ -83,13 +82,16 @@ class RocksampleDataProcessing():
                     history[idx] = entry.quality
 
         if len(history) == self.t:
-            return torch.tensor(np.array(history)).to(torch.float)
+            return torch.from_numpy(np.array(history)).to(torch.float)
 
-        else:
+        if len(history) < self.t:
             # Zero padding if the history tuple is smaller than t
             hist_tensor = torch.zeros((self.t))
-            hist_tensor[(self.t - len(history)):] = torch.tensor(np.array(history))
+            hist_tensor[(self.t - len(history)):] = torch.from_numpy(np.array(history))
             return hist_tensor.to(torch.float)
+
+        if len(history) > self.t:
+            return torch.from_numpy(np.array(history[-self.t:])).to(torch.float)
 
 
     def batch_from_particles(self, belief, probabilities):
@@ -121,7 +123,7 @@ class RocksampleDataProcessing():
 
 
             sample = np.concatenate((np.array(sample_pos), np.array(sample_rocktypes), sample_terminal, sample_prob), axis=None)
-            batch[idx] = torch.tensor(sample).to(torch.float)
+            batch[idx] = torch.from_numpy(sample).to(torch.float)
 
         return batch
 
@@ -161,7 +163,7 @@ class RocksampleDataProcessing():
 
             particles.append(rs.State(sample_pos, rocktypes, sample_terminal))
 
-        probabilities = probabilities.detach().numpy()
+        # probabilities = probabilities.detach().numpy()
 
         # Drop duplicates
         particles = list(set(particles))
@@ -178,7 +180,8 @@ class RocksampleDataProcessing():
                 rocktypes = tuple(rocktypes)
                 particles.append(rs.State((random.randint(0, self.n-1), random.randint(0, self.n-1)), rocktypes, False))
 
-            probabilities[num_predicted_particles:] = np.full((num_particles_to_add), (1-np.sum(probabilities[:num_predicted_particles]))/num_particles_to_add)
+            # # Keeping the first probability and repeating the others
+            # probabilities[num_predicted_particles:] = np.full((num_particles_to_add), (1-np.sum(probabilities[:num_predicted_particles]))/num_particles_to_add)
 
         belief = pomdp_py.Particles(particles)
 
@@ -210,7 +213,7 @@ class RocksampleDataProcessing():
 
             qval_array[idx] = qvals
 
-        return qval_array
+        return torch.from_numpy(qval_array).to(torch.float)
 
 
 

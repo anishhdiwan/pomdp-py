@@ -250,10 +250,12 @@ class Network_Utils():
 
     
     def argmax(self, hist_conditioned_qvalues):
-        idx = np.argmax(hist_conditioned_qvalues, axis=0)
+        # Creating a clone to convert nan to num. Nans are needed during the update later on but affect the argmax operation
+        temp_qvalues = torch.clone(hist_conditioned_qvalues).detach()
+        idx = torch.argmax(torch.nan_to_num(temp_qvalues), dim=0)
         actions_dict = dict((v, k) for k, v in self.env_data_processing.actions.items())
-        action_name = actions_dict[idx]
-        action_value = hist_conditioned_qvalues[idx]
+        action_name = actions_dict[idx.item()]
+        action_value = hist_conditioned_qvalues[idx.item()]
         return action_name, action_value
 
     def getHistoryConditionedQValues(self, bel_state_conditioned_qvalues, probabilities):
@@ -261,7 +263,10 @@ class Network_Utils():
         # bel_state_conditioned_qvalues is a dictionary of {action: value} pairs for each particle in the belief
         bel_state_conditioned_qvalues = self.env_data_processing.qval_array_from_dict(bel_state_conditioned_qvalues)
         # print(bel_state_conditioned_qvalues)
-        hist_conditioned_qvalues = np.nan_to_num(np.average(bel_state_conditioned_qvalues, axis=0, weights=probabilities))
+        # print(probabilities.view(bel_state_conditioned_qvalues.shape[0], -1))
+        probabilities = probabilities.view(bel_state_conditioned_qvalues.shape[0], -1)
+        # hist_conditioned_qvalues = np.nan_to_num(np.average(bel_state_conditioned_qvalues, axis=0, weights=probabilities))
+        hist_conditioned_qvalues = (probabilities * bel_state_conditioned_qvalues).sum(dim=0)
         self.hist_conditioned_qvalues = hist_conditioned_qvalues
 
         return hist_conditioned_qvalues
@@ -270,7 +275,7 @@ class Network_Utils():
         # Compute the new belief state and probabilities given the old ones
         belief_tensor = self.env_data_processing.batch_from_particles(belief=agent.belief, probabilities=self.bel_prob)
         self.hist_tensor = self.env_data_processing.cond_from_history(agent.history)
-        new_belief, new_bel_prob = self.belief_net(belief_tensor, self.hist_tensor)
+        new_belief, new_bel_prob = self.belief_net(belief_tensor.to(torch.float), self.hist_tensor)
         self.bel_prob = new_bel_prob
 
         new_belief, new_bel_prob = self.env_data_processing.particles_from_output(new_belief, new_bel_prob)
@@ -280,14 +285,20 @@ class Network_Utils():
     def updateNetworks(self, agent, reward, best_action_value):
         # QNet Loss 
         pred_q_values = self.q_net(self.hist_tensor)
-        hist_conditioned_qvalues = self.hist_conditioned_qvalues.copy()
+        hist_conditioned_qvalues = self.hist_conditioned_qvalues
+        # hist_conditioned_qvalues = torch.from_numpy(self.hist_conditioned_qvalues.copy()).to(torch.float)
+        best_action_value = torch.tensor([best_action_value], requires_grad=True)
         assert pred_q_values.shape == hist_conditioned_qvalues.shape, "The shapes of Q(.|h) and Qnet(h) must match"
 
-        mask = ma.masked_where(hist_conditioned_qvalues==None, hist_conditioned_qvalues)
-        hist_conditioned_qvalues[mask.mask] = 0.
-        pred_q_values[mask.mask] = 0.
+        # mask = ma.masked_where(hist_conditioned_qvalues==None, hist_conditioned_qvalues)
+        # hist_conditioned_qvalues[mask.mask] = 0.
+        # pred_q_values[mask.mask] = 0.
 
-        qnet_loss = F.mse_loss(pred_q_values, torch.tensor(hist_conditioned_qvalues))
+        mask = torch.isnan(hist_conditioned_qvalues)
+        hist_conditioned_qvalues[mask] = 0.
+        pred_q_values[mask] = 0.
+
+        qnet_loss = F.mse_loss(pred_q_values.to(torch.float), hist_conditioned_qvalues)
 
         # Belief Net Loss
         # Assuming that the agent's history agent.history has been updated via agent.update_history() and a reward has been seen via env.state_transition()
@@ -299,76 +310,21 @@ class Network_Utils():
         # Q(areal) = argmax( Q(.|h) ) = argmax( bel_prob * some_vector_from_sim ) = argmax( bel_net(old_bet, hist) * some_vector )
         # This means backward() will compute gradients for the bel_net 
         bootstrapped_return = reward + self.discount_factor*best_next_action
+        bootstrapped_return = torch.tensor([bootstrapped_return])
 
-        belnet_loss = F.mse_loss(bootstrapped_return, torch.tensor(best_action_value))
+        belnet_loss = F.mse_loss(bootstrapped_return, best_action_value)
 
         # Update
         self.qnet_optim.zero_grad()
-        # qnet_loss.backward()
+        qnet_loss.backward()
         self.qnet_optim.step()
 
         self.belnet_optim.zero_grad()
-        # belnet_loss.backward()
+        belnet_loss.backward()
         self.belnet_optim.step()
 
 
         return qnet_loss, belnet_loss
-
-
-# ### TESTING ###
-# n, k = 5, 5
-# num_particles = 6
-# hist_dim = 10
-
-
-# from rocksample_data_utils import RocksampleDataProcessing
-# from pomdp_problems.rocksample import rocksample_problem as rs
-# init_state, rock_locs = rs.RockSampleProblem.generate_instance(n, k)
-
-# belief_type = "uniform"
-# init_belief = rs.init_particles_belief(k, num_particles, init_state, belief=belief_type)
-# # print(init_belief)
-
-# data_processing = RocksampleDataProcessing(n=n, k=k, t=hist_dim, bel_size=num_particles)
-
-
-# belief_tensor = data_processing.batch_from_particles(belief=init_belief, probabilities=np.full((num_particles), float(1/num_particles)))
-# cond_tensor = data_processing.cond_from_history(history=())
-
-# # print("-----")
-# # print(f"Belief Tensor {num_particles} x [posx posy | {k} x rocktype | terminal+state | prob]")
-# # print(belief_tensor)
-# # print("Conditioning [a, o, a, o ..]")
-# # print(cond_tensor)
-
-# belief_net = MultiHeadAutoencoder(in_dim=k+4, latent_space_dim=128, cond_dim=hist_dim, out_dims=[2, k, 1], 
-#         encoder_hidden_layers=[64], decoder_hidden_layers=[[64, 32], [64], [64, 32, 8]], 
-#         output_prob_predicter_hidden_layers=[256, 126, 64, 8], batch_size=num_particles, n=n)
-
-# new_belief, new_probabilities = belief_net(belief_tensor, cond_tensor)
-
-
-# # print("-----")
-# # print(f"Model Output {num_particles} x [posx posy | {k} x rocktype | terminal+state]")
-# # print(new_belief)
-# # print("Probabilities")
-# # print(new_probabilities)
-
-
-# new_belief, new_probabilities = data_processing.particles_from_output(new_belief, new_probabilities)
-# # print("-----")
-# print(new_belief)
-# print(new_probabilities)
-
-
-# # q_net = dueling_net(n_actions=data_processing.num_actions, in_dim=hist_dim, encoder_hidden_layers=[64], latent_space_dim=128, 
-# #         state_decoder_hidden_layers=[64, 32, 8], advantage_decoder_hidden_layers=[64, 32])
-
-# # q_values = q_net(cond_tensor)
-
-# # print("Q(.|h)")
-# # print(q_values)
-
 
 
 
