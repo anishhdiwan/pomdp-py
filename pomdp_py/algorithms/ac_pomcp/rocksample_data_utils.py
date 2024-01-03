@@ -77,9 +77,11 @@ class RocksampleDataProcessing():
 
             if isinstance(entry, pomdp_py.Observation):
                 if entry.quality == None:
-                    history[idx] = 0
-                else:
-                    history[idx] = entry.quality
+                    history[idx] = 0.5
+                elif entry.quality == 'good':
+                    history[idx] = 1.0
+                elif entry.quality == 'bad':
+                    history[idx] = 0.0
 
         if len(history) == self.t:
             return torch.from_numpy(np.array(history)).to(torch.float)
