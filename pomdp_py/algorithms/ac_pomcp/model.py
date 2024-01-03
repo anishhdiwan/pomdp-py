@@ -10,6 +10,8 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 
+# Score Estimation version of the belief network
+
 ### Belief Network ###
 class LatentSpaceTf(nn.Module):
     """
@@ -77,46 +79,8 @@ class FiLMEmbeddings(nn.Module):
         return scale*x + bias
 
 
-class BoolMask(nn.Module):
-    """
-    A very simple boolean mask.
 
-    Compare each element with the mask value and output a new boolean tensor
-    
-    Args:
-        maskval (float): The threshold to compare against
-    """
-    def __init__(self, maskval=0.5):
-        super().__init__()
-        self.maskval = maskval
-
-    def forward(self, x):
-        x = x < self.maskval
-        return x
-
-
-class ScaleMask(nn.Module):
-    """
-    A very simple output un-normalisation
-
-    Convert outputs in [0, 1] to some range [min, max]
-    
-    Args:
-        min (float): The min value of the output range
-        max (float): The max value of the output range
-    """
-    def __init__(self, minval, maxval):
-        super().__init__()
-        self.min = minval
-        self.max = maxval
-
-    def forward(self, x):
-        x = self.min + (self.max - self.min)*x
-        return x
-
-
-
-class MultiHeadAutoencoder(nn.Module):
+class EnergyModel(nn.Module):
     """
     This network transforms belief subsets into new belief subsets.
 
