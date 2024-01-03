@@ -271,15 +271,20 @@ class Network_Utils():
 
         return hist_conditioned_qvalues
 
-    def getNewBelief(self, agent):
-        # Compute the new belief state and probabilities given the old ones
-        belief_tensor = self.env_data_processing.batch_from_particles(belief=agent.belief, probabilities=self.bel_prob)
-        self.hist_tensor = self.env_data_processing.cond_from_history(agent.history)
-        new_belief, new_bel_prob = self.belief_net(belief_tensor.to(torch.float), self.hist_tensor)
-        self.bel_prob = new_bel_prob
+    def getNewBelief(self, agent, first_step=False):
+        # History is set only after getNewBelief() is executed. This is not true on step 1 as the uniform belief is used. Hence it is added here for the first update
+        if first_step:
+            self.hist_tensor = self.env_data_processing.cond_from_history(agent.history)
+        
+        else:
+            # Compute the new belief state and probabilities given the old ones
+            belief_tensor = self.env_data_processing.batch_from_particles(belief=agent.belief, probabilities=self.bel_prob)
+            self.hist_tensor = self.env_data_processing.cond_from_history(agent.history)
+            new_belief, new_bel_prob = self.belief_net(belief_tensor.to(torch.float), self.hist_tensor)
+            self.bel_prob = new_bel_prob
 
-        new_belief, new_bel_prob = self.env_data_processing.particles_from_output(new_belief, new_bel_prob)
-        return new_belief, new_bel_prob
+            new_belief, new_bel_prob = self.env_data_processing.particles_from_output(new_belief, new_bel_prob)
+            return new_belief, new_bel_prob
 
 
     def updateNetworks(self, agent, reward, best_action_value):
@@ -309,8 +314,9 @@ class Network_Utils():
         # Here R + gamma*max(Q(hnext)) is the return in bootstrap form. We are trying to change Q(areal) so that it is close to the return
         # Q(areal) = argmax( Q(.|h) ) = argmax( bel_prob * some_vector_from_sim ) = argmax( bel_net(old_bet, hist) * some_vector )
         # This means backward() will compute gradients for the bel_net 
+        # requires_grad=False for bootstrapped_return since we do not want to update the Q_network in this step. We only want to backprop gradients to the belief network
         bootstrapped_return = reward + self.discount_factor*best_next_action
-        bootstrapped_return = torch.tensor([bootstrapped_return])
+        bootstrapped_return = torch.tensor([bootstrapped_return], requires_grad=False) 
 
         belnet_loss = F.mse_loss(bootstrapped_return, best_action_value)
 
