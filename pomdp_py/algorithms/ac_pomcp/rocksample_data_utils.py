@@ -111,8 +111,8 @@ class RocksampleDataProcessing():
         """
         assert len(belief.particles) == self.bel_size, "The number of particles must match the size of the belief subset"  
         batch = torch.zeros(self.bel_size,self.k+4)
-        if torch.is_tensor(probabilities):
-            probabilities = probabilities.detach().numpy()
+        # if torch.is_tensor(probabilities):
+        #     probabilities = probabilities.detach().numpy()
 
         for idx, particle in enumerate(belief.particles):
             sample_pos = particle.position
@@ -121,23 +121,24 @@ class RocksampleDataProcessing():
                 sample_rocktypes[i] = 0. if sample_rocktypes[i] == "bad" else 1.
             sample_terminal = particle.terminal
             sample_terminal = 1. if sample_terminal == True else 0.
-            sample_prob = probabilities[idx]
+            # sample_prob = probabilities[idx]
 
 
-            sample = np.concatenate((np.array(sample_pos), np.array(sample_rocktypes), sample_terminal, sample_prob), axis=None)
+            # sample = np.concatenate((np.array(sample_pos), np.array(sample_rocktypes), sample_terminal, sample_prob), axis=None)
+            sample = np.concatenate((np.array(sample_pos), np.array(sample_rocktypes), sample_terminal), axis=None)
             batch[idx] = torch.from_numpy(sample).to(torch.float)
 
         return batch
 
 
-    def particles_from_output(self, out, probabilities):
+    def particles_from_output(self, out):
         """Generate a belief instance (pomdp_py.representations.distribution.Particles) from the output of the neural network
 
         Reinvigorate particles if the network predicted a belief subset with the same particles repeated
 
         Args:
             out (tensor): A tensor of the output of the neural network
-            probabilities (array): Probabilities of each belief state
+
 
         Returns:
             A belief (pomdp_py.representations.distribution.Particles) instance representing the outputs of the neural network
@@ -165,7 +166,6 @@ class RocksampleDataProcessing():
 
             particles.append(rs.State(sample_pos, rocktypes, sample_terminal))
 
-        # probabilities = probabilities.detach().numpy()
 
         # Drop duplicates
         particles = list(set(particles))
@@ -187,7 +187,7 @@ class RocksampleDataProcessing():
 
         belief = pomdp_py.Particles(particles)
 
-        return belief, probabilities
+        return belief
 
 
     def qval_array_from_dict(self, bel_state_conditioned_qvalues):

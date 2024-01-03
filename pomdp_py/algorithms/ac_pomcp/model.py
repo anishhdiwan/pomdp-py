@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+from torch.autograd import grad
 
 
 # Score Estimation version of the belief network
@@ -79,64 +80,94 @@ class FiLMEmbeddings(nn.Module):
         return scale*x + bias
 
 
-
-class EnergyModel(nn.Module):
+class ScaleMask(nn.Module):
     """
-    This network transforms belief subsets into new belief subsets.
+    A very simple output un-normalisation
 
-    Encode an input, apply FiLM conditioning, and then decode the latent space features via multiple heads
+    Convert outputs in [0, 1] to some range [min, max]
+    
+    Args:
+        min (float): The min value of the output range
+        max (float): The max value of the output range
+    """
+    def __init__(self, minval, maxval):
+        super().__init__()
+        self.min = minval
+        self.max = maxval
+
+    def forward(self, x):
+        x = self.min + (self.max - self.min)*x
+        return x
+
+
+
+class EnergyPredAutoencoder(nn.Module):
+    """
+    This network transforms belief subsets into an energy prediction
+
+    Encode an input, apply FiLM conditioning, and then decode the latent space features to return an energy value
 
     Args:
         in_dim (int): dimensionality of the input
         latent_space_dim (int): dimensionality of the latent space
-        cond_dim (int): dimensionality of the conditioning vector (cond)
-        out_dims (list): list of dimensionalities of the output of each head 
+        cond_dim (int): dimensionality of the conditioning vector (cond) 
         encoder_hidden_layers (list): list of the number of neurons in the hidden layers of the encoder (in order of the layers)
-        decoder_hidden_layers (2D list): 2D list of the number of neurons in the hidden layers of the decoder (in order of the layers)
-        output_prob_predicter_hidden_layers (list): list of the number of neurons in the hidden layers of the output probability prediction head (in order of the layers)
+        decoder_hidden_layers (list): list of the number of neurons in the hidden layers of the decoder (in order of the layers)
         batch_size (int): NOT the traditional definition of batch size. Here a batch is a belief subset. Each sample in a batch is a belief state
         n (int): size of the environment    
     """
 
-    def __init__(self, in_dim, latent_space_dim, cond_dim, out_dims, 
-        encoder_hidden_layers, decoder_hidden_layers, output_prob_predicter_hidden_layers, batch_size, n):
+    def __init__(self, in_dim, latent_space_dim, cond_dim, 
+        encoder_hidden_layers, decoder_hidden_layers, batch_size, n):
         super().__init__()
-        self.encoder = LatentSpaceTf(in_dim, encoder_hidden_layers, latent_space_dim)
+        self.encoder = LatentSpaceTf(int(batch_size*in_dim), encoder_hidden_layers, latent_space_dim)
         self.film_encoder = FiLMEmbeddings(latent_space_dim, cond_dim)
-
-        # Output heads
-        self.output_heads = []
-        for i in range(len(out_dims)):
-            self.output_heads.append([LatentSpaceTf(latent_space_dim, decoder_hidden_layers[i], out_dims[i]), nn.Sigmoid()])
-
-        self.output_heads[0].append(ScaleMask(0, n-1))
-        # self.output_heads[1].append(BoolMask(0.5))
-        # self.output_heads[2].append(BoolMask(0.5))
-
-
-        for i in range(len(self.output_heads)):
-            self.output_heads[i] = nn.Sequential(*self.output_heads[i])
-
-
-        # Take in the whole batch of concatenated outputs and compute their probabilities
-        self.output_prob_predicter = nn.Sequential(
-            LatentSpaceTf(int(batch_size*sum(out_dims)), output_prob_predicter_hidden_layers, batch_size),
-            nn.Softmax(dim=0)
-            )
+        self.decoder = LatentSpaceTf(latent_space_dim, decoder_hidden_layers, 1)
+        self.scale_mask = ScaleMask(0, n-1)
 
 
     def forward(self, x, cond):
+        desired_shape = x.shape
+        x = x.flatten()
         encoded_input = self.encoder(x)
         conditioned_input = self.film_encoder(encoded_input, cond)
+        energy = self.decoder(conditioned_input)
 
-        outputs = []
-        for output_head in self.output_heads:
-            outputs.append(output_head(conditioned_input))
+        # score = -grad(energy(x))
+        score = grad(outputs=energy, inputs=x, grad_outputs=torch.ones_like(energy), retain_graph=True, create_graph=True)[0]
 
-        concatenated_output = torch.cat((outputs), 1).to(torch.float)
-        output_probabilities = self.output_prob_predicter(concatenated_output.flatten())
+        # denoised x = x - score
+        new_belief = x - score
+
+        # Transform new_belief back to the original data modality
+        new_belief = new_belief.reshape(desired_shape)
+        new_belief = F.sigmoid(new_belief)
+        new_belief[:, :2] = self.scale_mask(new_belief[:, :2])
         
-        return concatenated_output, output_probabilities
+        return new_belief, energy
+
+
+
+class BeliefProbPredicter(nn.Module):
+    """
+    This network takes in a belief state and predicts a vector of individual belief probabilities
+
+    Args:
+        in_dim (int): dimensionality of the input        
+        output_prob_predicter_hidden_layers (list): list of the number of neurons in the hidden layers of the output probability prediction head (in order of the layers)
+        batch_size (int): NOT the traditional definition of batch size. Here a batch is a belief subset. Each sample in a batch is a belief state
+        n (int): size of the environment    
+    """
+    def __init__(self, in_dim, output_prob_predicter_hidden_layers, batch_size):
+        # Take in the whole batch of concatenated outputs and compute their probabilities
+        self.output_prob_predicter = nn.Sequential(
+            LatentSpaceTf(int(batch_size*in_dim), output_prob_predicter_hidden_layers, batch_size),
+            nn.Softmax(dim=0)
+            )
+
+    def forward(self, x):
+        output_probabilities = self.output_prob_predicter(x.flatten())
+        return output_probabilities
 
 
 ### Q-Network ###
@@ -190,7 +221,7 @@ class Network_Utils():
     Utility functions for the qvalue and belief networks
 
     Args:
-        belief_net (nn.Module): Belief network
+        energy_net (nn.Module): Belief network
         q_net (nn.Module): Q value network
         env_data_processing (class): Data processing utils for the environment
         bel_prob (ndarray): Probabilities of each belief state
@@ -199,19 +230,21 @@ class Network_Utils():
         init_bel_prob (ndarray): initial belief probabilities
 
     """
-    def __init__(self, belief_net, q_net, env_data_processing, init_bel_prob, qnet_lr, belnet_lr, discount_factor):
-        self.belief_net = belief_net.to(torch.float)
+    def __init__(self, energy_net, bel_prob_net, q_net, env_data_processing, init_bel_prob, qnet_lr, belprobnet_lr, energynet_lr, discount_factor):
+        self.energy_net = energy_net.to(torch.float)
+        self.bel_prob_net = bel_prob_net.to(torch.float)
         self.q_net = q_net.to(torch.float)
         self.env_data_processing = env_data_processing
         self.bel_prob = init_bel_prob
         self.qnet_lr = qnet_lr
-        self.belnet_lr = belnet_lr
+        self.belprobnet_lr = belprobnet_lr
+        self.energynet_lr = energynet_lr
         self.hist_tensor = None
         self.discount_factor = discount_factor
 
         self.qnet_optim = optim.Adam(self.q_net.parameters(), lr=self.qnet_lr, weight_decay=1e-5) # Weight decay is L2 regularization
-        self.belnet_optim = optim.Adam(self.belief_net.parameters(), lr=self.belnet_lr, weight_decay=1e-5) # Weight decay is L2 regularization
-
+        self.energynet_optim = optim.Adam(self.energy_net.parameters(), lr=self.energynet_lr, weight_decay=1e-5)
+        self.belprobnet_optim = optim.Adam(self.bel_prob_net.parameters(), lr=self.belprobnet_lr, weight_decay=1e-5)
     
     def argmax(self, hist_conditioned_qvalues):
         # Creating a clone to convert nan to num. Nans are needed during the update later on but affect the argmax operation
@@ -226,10 +259,7 @@ class Network_Utils():
         # Get Q(.|h) = SUM (p(s) * Q(.|s))
         # bel_state_conditioned_qvalues is a dictionary of {action: value} pairs for each particle in the belief
         bel_state_conditioned_qvalues = self.env_data_processing.qval_array_from_dict(bel_state_conditioned_qvalues)
-        # print(bel_state_conditioned_qvalues)
-        # print(probabilities.view(bel_state_conditioned_qvalues.shape[0], -1))
         probabilities = probabilities.view(bel_state_conditioned_qvalues.shape[0], -1)
-        # hist_conditioned_qvalues = np.nan_to_num(np.average(bel_state_conditioned_qvalues, axis=0, weights=probabilities))
         hist_conditioned_qvalues = (probabilities * bel_state_conditioned_qvalues).sum(dim=0)
         self.hist_conditioned_qvalues = hist_conditioned_qvalues
 
@@ -244,32 +274,36 @@ class Network_Utils():
             # Compute the new belief state and probabilities given the old ones
             belief_tensor = self.env_data_processing.batch_from_particles(belief=agent.belief, probabilities=self.bel_prob)
             self.hist_tensor = self.env_data_processing.cond_from_history(agent.history)
-            new_belief, new_bel_prob = self.belief_net(belief_tensor.to(torch.float), self.hist_tensor)
+            
+            new_belief, self.energy = self.energy_net(belief_tensor.to(torch.float), self.hist_tensor)
+            # Detach the new belief so that gradients do not flow back to the energy network
+            new_belief_detached = new_belief.clone().detach()
+            new_bel_prob = self.bel_prob_net(new_belief_detached)
+
             self.bel_prob = new_bel_prob
 
-            new_belief, new_bel_prob = self.env_data_processing.particles_from_output(new_belief, new_bel_prob)
+            new_belief = self.env_data_processing.particles_from_output(new_belief)
             return new_belief, new_bel_prob
 
 
     def updateNetworks(self, agent, reward, best_action_value):
-        # QNet Loss 
+        
         pred_q_values = self.q_net(self.hist_tensor)
         hist_conditioned_qvalues = self.hist_conditioned_qvalues
-        # hist_conditioned_qvalues = torch.from_numpy(self.hist_conditioned_qvalues.copy()).to(torch.float)
         best_action_value = torch.tensor([best_action_value], requires_grad=True)
-        assert pred_q_values.shape == hist_conditioned_qvalues.shape, "The shapes of Q(.|h) and Qnet(h) must match"
+        reward_tensor = torch.tensor([reward], requires_grad=False)
 
-        # mask = ma.masked_where(hist_conditioned_qvalues==None, hist_conditioned_qvalues)
-        # hist_conditioned_qvalues[mask.mask] = 0.
-        # pred_q_values[mask.mask] = 0.
+        assert pred_q_values.shape == hist_conditioned_qvalues.shape, "The shapes of Q(.|h) and Qnet(h) must match"
 
         mask = torch.isnan(hist_conditioned_qvalues)
         hist_conditioned_qvalues[mask] = 0.
         pred_q_values[mask] = 0.
 
+
+        ### QNET LOSS ### 
         qnet_loss = F.mse_loss(pred_q_values.to(torch.float), hist_conditioned_qvalues)
 
-        # Belief Net Loss
+        ### BELIEF PROBABILITY NET LOSS ###
         # Assuming that the agent's history agent.history has been updated via agent.update_history() and a reward has been seen via env.state_transition()
         next_hist_tensor = self.env_data_processing.cond_from_history(agent.history)
         best_next_action = torch.max(self.q_net(next_hist_tensor))
@@ -282,19 +316,26 @@ class Network_Utils():
         bootstrapped_return = reward + self.discount_factor*best_next_action
         bootstrapped_return = torch.tensor([bootstrapped_return], requires_grad=False) 
 
-        belnet_loss = F.mse_loss(bootstrapped_return, best_action_value)
+        belprobnet_loss = F.mse_loss(bootstrapped_return, best_action_value)
 
-        # Update
+        ### ENERGY NET LOSS ###
+        energynet_loss = F.mse_loss(self.energy, reward_tensor)
+
+        ### UPDATE ###
         self.qnet_optim.zero_grad()
         qnet_loss.backward()
         self.qnet_optim.step()
 
-        self.belnet_optim.zero_grad()
-        belnet_loss.backward()
-        self.belnet_optim.step()
+        self.belprobnet_optim.zero_grad()
+        belprobnet_loss.backward()
+        self.belprobnet_optim.step()
+
+        self.energynet_optim.zero_grad()
+        energynet_loss.backward()
+        self.energynet_optim.step()
 
 
-        return qnet_loss, belnet_loss
+        return qnet_loss, belprobnet_loss, energynet_loss
 
 
 
