@@ -129,9 +129,12 @@ class EnergyPredAutoencoder(nn.Module):
     def forward(self, x, cond):
         desired_shape = x.shape
         x = x.flatten()
+        x.requires_grad = True
+        cond.requires_grad = True
         encoded_input = self.encoder(x)
         conditioned_input = self.film_encoder(encoded_input, cond)
         energy = self.decoder(conditioned_input)
+
 
         # score = -grad(energy(x))
         score = grad(outputs=energy, inputs=x, grad_outputs=torch.ones_like(energy), retain_graph=True, create_graph=True)[0]
@@ -159,6 +162,7 @@ class BeliefProbPredicter(nn.Module):
         n (int): size of the environment    
     """
     def __init__(self, in_dim, output_prob_predicter_hidden_layers, batch_size):
+        super().__init__()
         # Take in the whole batch of concatenated outputs and compute their probabilities
         self.output_prob_predicter = nn.Sequential(
             LatentSpaceTf(int(batch_size*in_dim), output_prob_predicter_hidden_layers, batch_size),
@@ -269,10 +273,12 @@ class Network_Utils():
         # History is set only after getNewBelief() is executed. This is not true on step 1 as the uniform belief is used. Hence it is added here for the first update
         if first_step:
             self.hist_tensor = self.env_data_processing.cond_from_history(agent.history)
+            belief_tensor = self.env_data_processing.batch_from_particles(belief=agent.belief)
+            _, self.energy = self.energy_net(belief_tensor.to(torch.float), self.hist_tensor)
         
         else:
             # Compute the new belief state and probabilities given the old ones
-            belief_tensor = self.env_data_processing.batch_from_particles(belief=agent.belief, probabilities=self.bel_prob)
+            belief_tensor = self.env_data_processing.batch_from_particles(belief=agent.belief)
             self.hist_tensor = self.env_data_processing.cond_from_history(agent.history)
             
             new_belief, self.energy = self.energy_net(belief_tensor.to(torch.float), self.hist_tensor)

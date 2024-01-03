@@ -96,7 +96,7 @@ class RocksampleDataProcessing():
             return torch.from_numpy(np.array(history[-self.t:])).to(torch.float)
 
 
-    def batch_from_particles(self, belief, probabilities):
+    def batch_from_particles(self, belief):
         """Generate a batch of tensors with input samples for the belief network
 
         Args:
@@ -110,7 +110,7 @@ class RocksampleDataProcessing():
 
         """
         assert len(belief.particles) == self.bel_size, "The number of particles must match the size of the belief subset"  
-        batch = torch.zeros(self.bel_size,self.k+4)
+        batch = torch.zeros(self.bel_size,self.k+3)
         # if torch.is_tensor(probabilities):
         #     probabilities = probabilities.detach().numpy()
 
