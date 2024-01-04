@@ -170,7 +170,7 @@ class RocksampleDataProcessing():
         # Drop duplicates
         particles = list(set(particles))
 
-        # It is possible that the neural network maps all previous particles to the same output particle. This is okay. However, for 
+        # It is possible that the neural network returns a new belief such that a few particles are repeated. This is okay. However, for 
         # better exploration, new particles are added whenever this happens
         num_predicted_particles = len(set(particles)) 
         num_particles_to_add = self.bel_size - num_predicted_particles 
