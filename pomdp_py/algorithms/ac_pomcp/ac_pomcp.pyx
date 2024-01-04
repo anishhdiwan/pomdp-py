@@ -67,6 +67,8 @@ cdef class AC_POMCP(POUCT):
         cdef State state
         cdef Action best_action
         cdef int sims_count = 0
+        # Defining another counter to count the number of simulations done under each belief state
+        cdef int bel_conditioned_sims_count = 0
         cdef float time_taken = 0
         cdef float best_value
         cdef bint stop_by_sims = self._num_sims > 0
@@ -83,6 +85,7 @@ cdef class AC_POMCP(POUCT):
         bel_state_conditioned_qvalues = []
         for state in self._agent.belief.particles:
             # Run a set of simulations per belief state (stopping criteria could be num_sims or time_taken)
+            bel_conditioned_sims_count = 0
 
             start_time = time.time()
             while True:
@@ -93,6 +96,7 @@ cdef class AC_POMCP(POUCT):
                 self._simulate(state, self._agent.history, self._agent.tree,
                                None, None, 0)
                 sims_count +=1
+                bel_conditioned_sims_count +=1
                 time_taken = time.time() - start_time
 
                 # Refresh the tqdm progress bar
@@ -104,7 +108,7 @@ cdef class AC_POMCP(POUCT):
                     pbar.refresh()
 
                 if stop_by_sims:
-                    if sims_count >= self._num_sims:
+                    if bel_conditioned_sims_count >= self._num_sims:
                         break
                 else:
                     if time_taken > self._planning_time:
