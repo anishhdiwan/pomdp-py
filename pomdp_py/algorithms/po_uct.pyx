@@ -82,6 +82,19 @@ cdef class VNode(TreeNode):
     def __repr__(self):
         return self.__str__()
 
+    def get_value(self):
+        """Get the value of a VNode as the weighted average of the values of its children(QNodes) with weights being their visitation counts
+        """
+        total_visits = 0
+        value = 0
+        for action in self.children:
+            value += self[action].value * self[action].num_visits
+            total_visits += self[action].num_visits
+
+        value = value/total_visits
+        
+        return value
+
     def return_children_values(self):
         q_value_dict = {}
         for action in self.children:
