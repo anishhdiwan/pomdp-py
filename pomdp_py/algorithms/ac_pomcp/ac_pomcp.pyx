@@ -55,11 +55,11 @@ cdef class AC_POMCP(POUCT):
         if not hasattr(self._agent, "tree"):
             self._agent.add_attr("tree", None)
 
-        bel_state_conditioned_qvalues, time_taken, sims_count = self._search()
+        bel_state_conditioned_qvalues, bel_state_conditioned_hnextvalues, time_taken, sims_count = self._search()
         self._last_num_sims = sims_count
         self._last_planning_time = time_taken
 
-        return bel_state_conditioned_qvalues
+        return bel_state_conditioned_qvalues, bel_state_conditioned_hnextvalues
 
 
     ### NEW ###
@@ -83,6 +83,7 @@ cdef class AC_POMCP(POUCT):
 
 
         bel_state_conditioned_qvalues = []
+        bel_state_conditioned_hnextvalues = []
         for state in self._agent.belief.particles:
             # Run a set of simulations per belief state (stopping criteria could be num_sims or time_taken)
             bel_conditioned_sims_count = 0
@@ -122,14 +123,16 @@ cdef class AC_POMCP(POUCT):
 
             
             action_values = self._agent.tree.return_children_values()
+            next_hist_values = self._agent.tree.return_next_hist_values()
             bel_state_conditioned_qvalues.append(action_values)
+            bel_state_conditioned_hnextvalues.append(next_hist_values)
 
 
             # Reset the tree for the next belief state
             self._agent.tree = None
 
 
-        return bel_state_conditioned_qvalues, time_taken, sims_count 
+        return bel_state_conditioned_qvalues, bel_state_conditioned_hnextvalues, time_taken, sims_count 
 
 
 

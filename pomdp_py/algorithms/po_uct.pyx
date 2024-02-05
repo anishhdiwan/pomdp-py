@@ -97,6 +97,8 @@ cdef class VNode(TreeNode):
 
     def return_children_values(self):
         """Return the values of the child QNodes (action values)
+
+        Returns: dict of action_name: action_value
         """
         q_value_dict = {}
         for action in self.children:
@@ -107,6 +109,8 @@ cdef class VNode(TreeNode):
 
     def return_next_hist_values(self):
         """Return the values of the VNodes that are the children of this node's child QNodes
+
+        Returns: dict of action name: dict(observation: weighted_observation_value)
         """
         next_hist_value_dict = {}
         for action in self.children:

@@ -269,6 +269,19 @@ class Network_Utils():
 
         return hist_conditioned_qvalues
 
+
+    def getHNextValue(self, bel_state_conditioned_hnextvalues, action_name, real_observation, probabilities):
+        # Given a list of dicts with action: dict(obs: value), get the hnext values conditioned on the current history. Then return their weighted avg
+        hnext_values = np.zeros(len(bel_state_conditioned_hnextvalues))
+        for idx, hnext_dict in enumerate(bel_state_conditioned_hnextvalues):
+            hnext_values[idx] = hnext_dict[action_name][real_observation]
+
+        probabilities = probabilities.view(hnext_values.shape[0], -1)
+        hnext_value = (probabilities * hnext_values).sum(dim=0)
+
+        return hnext_value
+
+
     def getNewBelief(self, agent, first_step=False):
         # History is set only after getNewBelief() is executed. This is not true on step 1 as the uniform belief is used. Hence it is added here for the first update
         if first_step:
