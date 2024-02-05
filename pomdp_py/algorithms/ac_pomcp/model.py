@@ -274,8 +274,11 @@ class Network_Utils():
         # Given a list of dicts with action: dict(obs: value), get the hnext values conditioned on the current history. Then return their weighted avg
         hnext_values = np.zeros(len(bel_state_conditioned_hnextvalues))
         for idx, hnext_dict in enumerate(bel_state_conditioned_hnextvalues):
-            # print(f"next hist value dict for action {action_name} \n {hnext_dict[action_name]}")
-            hnext_values[idx] = hnext_dict[action_name].get(str(real_observation), 0.0)
+            # Add a value of 0.0 if either the action was not taken in this belief state's tree or if the observation was not seen after that action
+            if action_name in hnext_dict:
+                hnext_values[idx] = hnext_dict[action_name].get(str(real_observation), 0.0)
+            else:
+                hnext_values[idx] = 0.0
 
         # Gradient backprop is not necessary for next history q values (because of the semi-gradient update). Converting the tensor to np array if needed
         if torch.is_tensor(probabilities):
