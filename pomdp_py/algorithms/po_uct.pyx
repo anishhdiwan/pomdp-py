@@ -96,11 +96,28 @@ cdef class VNode(TreeNode):
         return value
 
     def return_children_values(self):
+        """Return the values of the child QNodes (action values)
+        """
         q_value_dict = {}
         for action in self.children:
             q_value_dict[str(action)] = self[action].value
         
         return q_value_dict
+
+
+    def return_next_hist_values(self):
+        """Return the values of the VNodes that are the children of this node's child QNodes
+        """
+        next_hist_value_dict = {}
+        for action in self.children:
+            values = {}
+            for observation in action.children:
+                values[str(observation)] = observation.get_value()
+
+            next_hist_value_dict[str(action)] = values
+        
+        return next_hist_value_dict
+
 
     def print_children_value(self):
         for action in self.children:
