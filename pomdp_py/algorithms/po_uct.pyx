@@ -114,9 +114,12 @@ cdef class VNode(TreeNode):
         """
         next_hist_value_dict = {}
         for action in self.children:
+            # print(f"\n {str(action)}")
             values = {}
-            for observation in action.children:
-                values[str(observation)] = observation.get_value()
+            for observation in self[action].children:
+                # print(f"\n {str(observation)}")
+                # print(f"\n obs val {self[action][observation].get_value()}")
+                values[str(observation)] = self[action][observation].get_value()
 
             next_hist_value_dict[str(action)] = values
         

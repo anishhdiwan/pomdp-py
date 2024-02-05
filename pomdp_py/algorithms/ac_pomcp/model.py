@@ -274,10 +274,16 @@ class Network_Utils():
         # Given a list of dicts with action: dict(obs: value), get the hnext values conditioned on the current history. Then return their weighted avg
         hnext_values = np.zeros(len(bel_state_conditioned_hnextvalues))
         for idx, hnext_dict in enumerate(bel_state_conditioned_hnextvalues):
-            hnext_values[idx] = hnext_dict[action_name][real_observation]
+            # print(f"next hist value dict for action {action_name} \n {hnext_dict[action_name]}")
+            hnext_values[idx] = hnext_dict[action_name].get(str(real_observation), 0.0)
 
-        probabilities = probabilities.view(hnext_values.shape[0], -1)
-        hnext_value = (probabilities * hnext_values).sum(dim=0)
+        # Gradient backprop is not necessary for next history q values (because of the semi-gradient update). Converting the tensor to np array if needed
+        if torch.is_tensor(probabilities):
+            bel_prob = probabilities.detach().clone().numpy()
+        else:
+            bel_prob = probabilities
+        hnext_value = (bel_prob * hnext_values).sum()
+
 
         return hnext_value
 
@@ -331,7 +337,7 @@ class Network_Utils():
         # best_next_action = torch.max(self.q_net(next_hist_tensor))
 
         ## Replacing q net prediction with search tree next hist values 
-        best_action_value = torch.tensor([hnext_value], requires_grad=False)
+        best_next_action = torch.tensor([hnext_value], requires_grad=False).to(torch.float)
 
         # delta = R + gamma*max(Q(hnext)) - Q(areal) 
         # Here R + gamma*max(Q(hnext)) is the return in bootstrap form. We are trying to change Q(areal) so that it is close to the return
