@@ -305,8 +305,11 @@ class Network_Utils():
             return new_belief, new_bel_prob
 
 
-    def updateNetworks(self, agent, reward, best_action_value):
-        
+    def updateNetworks(self, agent, reward, best_action_value, hnext_value):
+        ## Note: Switching from using predicted Q values in the semi-gradient update to using hnext values from the search tree.
+        ## Still keeping the q network for comparison! It is however NOT USED Anywhere
+
+
         pred_q_values = self.q_net(self.hist_tensor)
         hist_conditioned_qvalues = self.hist_conditioned_qvalues
         best_action_value = torch.tensor([best_action_value], requires_grad=True)
@@ -324,8 +327,11 @@ class Network_Utils():
 
         ### BELIEF PROBABILITY NET LOSS ###
         # Assuming that the agent's history agent.history has been updated via agent.update_history() and a reward has been seen via env.state_transition()
-        next_hist_tensor = self.env_data_processing.cond_from_history(agent.history)
-        best_next_action = torch.max(self.q_net(next_hist_tensor))
+        # next_hist_tensor = self.env_data_processing.cond_from_history(agent.history)
+        # best_next_action = torch.max(self.q_net(next_hist_tensor))
+
+        ## Replacing q net prediction with search tree next hist values 
+        best_action_value = torch.tensor([hnext_value], requires_grad=False)
 
         # delta = R + gamma*max(Q(hnext)) - Q(areal) 
         # Here R + gamma*max(Q(hnext)) is the return in bootstrap form. We are trying to change Q(areal) so that it is close to the return
@@ -341,6 +347,7 @@ class Network_Utils():
         energynet_loss = F.mse_loss(self.energy, reward_tensor)
 
         ### UPDATE ###
+        # Not used anywhere! Just here for comparison
         self.qnet_optim.zero_grad()
         qnet_loss.backward()
         self.qnet_optim.step()
