@@ -27,7 +27,7 @@ from pomdp_py import visual
 # Adding the AC-POMCP algo
 from pomdp_py.algorithms.ac_pomcp.ac_pomcp import AC_POMCP
 from pomdp_py.algorithms.ac_pomcp.model import Network_Utils, dueling_net, EnergyPredAutoencoder, BeliefProbPredicter
-from pomdp_py.algorithms.ac_pomcp.rocksample_data_utils import RocksampleDataProcessing
+from pomdp_py.algorithms.ac_pomcp.env_data_processing import RocksampleDataProcessing, TagDataProcessing
 
 # Templates & Utilities
 from pomdp_py.utils.templates import *
