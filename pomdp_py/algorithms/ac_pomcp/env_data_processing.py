@@ -137,7 +137,7 @@ class TagDataProcessing(DataProcessing):
                 if entry.target_position == None:
                     history[idx] = -1.
                 else:
-                    history[idx] = elegant_pair(target_position)
+                    history[idx] = elegant_pair(entry.target_position)
 
         
         # Padding/slicing
