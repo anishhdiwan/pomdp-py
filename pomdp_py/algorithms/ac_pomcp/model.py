@@ -154,13 +154,13 @@ class EnergyPredAutoencoder(nn.Module):
         new_belief = x - score
 
         # TODO: Change this ugly mess to something within the data processing script
-        if unnorm_size[0] == "rocksample": 
+        if self.unnorm_size[0] == "rocksample": 
             # Transform new_belief back to the original data modality
             new_belief = new_belief.reshape(desired_shape)
             new_belief = F.sigmoid(new_belief)
             new_belief[:, :2] = self.scale_mask(new_belief[:, :2])
 
-        elif unnorm_size[0] == "tag":
+        elif self.unnorm_size[0] == "tag":
             # Transform new_belief back to the original data modality
             new_belief = new_belief.reshape(desired_shape)
             new_belief = F.sigmoid(new_belief)

@@ -17,9 +17,10 @@ def elegant_pair(input_coords):
     """
     x = input_coords[0]
     y = input_coords[1]
+    print(f"coords xy {x,y}")
 
-    assert isinstance(x, int) "The input must be a tuple of ints"
-    assert isinstance(y, int) "The input must be a tuple of ints"
+    assert isinstance(x, int), "The input must be a tuple of ints"
+    assert isinstance(y, int), "The input must be a tuple of ints"
 
     if x >= y:
         return x*x + x + y
@@ -85,7 +86,7 @@ class TagDataProcessing(DataProcessing):
         history (tuple): agent's history 
     """
     def __init__(self, grid_map, t, bel_size):
-    	super().__init__(t, bel_size)
+        super().__init__(t, bel_size)
         self.grid_map = grid_map
         self.num_actions = 5
 
@@ -202,7 +203,7 @@ class TagDataProcessing(DataProcessing):
             sample_target_position = (int(round(sample[2])), int(round(sample[3])))
 
             sample_target_found = sample[-1]
-            sample_target_found = True if sample_terminal < 0.5 else False           
+            sample_target_found = True if sample_target_found < 0.5 else False           
 
             particles.append(TagState(sample_robot_position, sample_target_position, sample_target_found))
 
@@ -254,7 +255,7 @@ class RocksampleDataProcessing(DataProcessing):
         history (tuple): agent's history 
     """
     def __init__(self, n, k, t, bel_size):
-    	super().__init__(t, bel_size)
+        super().__init__(t, bel_size)
         self.n = n
         self.k = k
         self.num_fixed_actions = 5
