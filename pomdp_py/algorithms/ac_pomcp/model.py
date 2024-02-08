@@ -114,16 +114,27 @@ class EnergyPredAutoencoder(nn.Module):
         encoder_hidden_layers (list): list of the number of neurons in the hidden layers of the encoder (in order of the layers)
         decoder_hidden_layers (list): list of the number of neurons in the hidden layers of the decoder (in order of the layers)
         batch_size (int): NOT the traditional definition of batch size. Here a batch is a belief subset. Each sample in a batch is a belief state
-        n (int): size of the environment    
+        unnorm_size (list): env_name, list of the unnormalisation size state features (example: size of the environment)    
     """
 
     def __init__(self, in_dim, latent_space_dim, cond_dim, 
-        encoder_hidden_layers, decoder_hidden_layers, batch_size, n):
+        encoder_hidden_layers, decoder_hidden_layers, batch_size, unnorm_size):
         super().__init__()
         self.encoder = LatentSpaceTf(int(batch_size*in_dim), encoder_hidden_layers, latent_space_dim)
         self.film_encoder = FiLMEmbeddings(latent_space_dim, cond_dim)
         self.decoder = LatentSpaceTf(latent_space_dim, decoder_hidden_layers, 1)
-        self.scale_mask = ScaleMask(0, n-1)
+        self.unnorm_size = unnorm_size
+
+        # TODO: Change this ugly mess to something within the data processing script
+        if unnorm_size[0] == "rocksample":
+            n = unnorm_size[1][0]
+            self.scale_mask = ScaleMask(0, n-1)
+        elif unnorm_size[0] == "tag":
+            max_x = unnorm_size[1][0]
+            max_y = unnorm_size[1][1]
+            self.scale_maskx = ScaleMask(0, max_x-1)
+            self.scale_masky = ScaleMask(0, max_y-1)
+
 
 
     def forward(self, x, cond):
@@ -142,10 +153,22 @@ class EnergyPredAutoencoder(nn.Module):
         # denoised x = x - score
         new_belief = x - score
 
-        # Transform new_belief back to the original data modality
-        new_belief = new_belief.reshape(desired_shape)
-        new_belief = F.sigmoid(new_belief)
-        new_belief[:, :2] = self.scale_mask(new_belief[:, :2])
+        # TODO: Change this ugly mess to something within the data processing script
+        if unnorm_size[0] == "rocksample": 
+            # Transform new_belief back to the original data modality
+            new_belief = new_belief.reshape(desired_shape)
+            new_belief = F.sigmoid(new_belief)
+            new_belief[:, :2] = self.scale_mask(new_belief[:, :2])
+
+        elif unnorm_size[0] == "tag":
+            # Transform new_belief back to the original data modality
+            new_belief = new_belief.reshape(desired_shape)
+            new_belief = F.sigmoid(new_belief)
+            new_belief[:,1] = self.scale_maskx(new_belief[:,1])
+            new_belief[:,3] = self.scale_maskx(new_belief[:,3])
+            new_belief[:,2] = self.scale_masky(new_belief[:,2])
+            new_belief[:,4] = self.scale_masky(new_belief[:,4])
+
         
         return new_belief, energy
 
