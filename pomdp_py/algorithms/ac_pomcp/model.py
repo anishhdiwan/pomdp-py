@@ -180,15 +180,15 @@ class BeliefProbPredicter(nn.Module):
 
     Args:
         in_dim (int): dimensionality of the input        
-        output_prob_predicter_hidden_layers (list): list of the number of neurons in the hidden layers of the output probability prediction head (in order of the layers)
+        hidden_layers (list): list of the number of neurons in the hidden layers of the output probability prediction head (in order of the layers)
         batch_size (int): NOT the traditional definition of batch size. Here a batch is a belief subset. Each sample in a batch is a belief state
         n (int): size of the environment    
     """
-    def __init__(self, in_dim, output_prob_predicter_hidden_layers, batch_size):
+    def __init__(self, in_dim, hidden_layers, batch_size):
         super().__init__()
         # Take in the whole batch of concatenated outputs and compute their probabilities
         self.output_prob_predicter = nn.Sequential(
-            LatentSpaceTf(int(batch_size*in_dim), output_prob_predicter_hidden_layers, batch_size),
+            LatentSpaceTf(int(batch_size*in_dim), hidden_layers, batch_size),
             nn.Softmax(dim=0)
             )
 
