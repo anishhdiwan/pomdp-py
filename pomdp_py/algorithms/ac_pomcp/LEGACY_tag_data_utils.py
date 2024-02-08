@@ -5,25 +5,6 @@ from pomdp_problems.tag.domain.action import MOTION_ACTIONS, TagAction
 from pomdp_problems.tag.domain.state import TagState
 import random
 
-def elegant_pair(input_coords):
-    """The Szudzik Function http://szudzik.com/ElegantPairing.pdf
-    
-    Args:
-        input_coords (tuple): x,y position as a tuple of ints
-    """
-    x = input_coords[0]
-    y = input_coords[1]
-
-    assert isinstance(x, int) "The input must be a tuple of ints"
-    assert isinstance(y, int) "The input must be a tuple of ints"
-
-    if x >= y:
-        return x*x + x + y
-    else:
-        return y*y + x
-
-
-
 
 class TagDataProcessing():
     """
