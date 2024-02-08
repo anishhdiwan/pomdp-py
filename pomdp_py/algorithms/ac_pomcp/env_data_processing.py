@@ -210,29 +210,30 @@ class TagDataProcessing(DataProcessing):
 
         # Drop duplicates
         particles = list(set(particles))
+        # print(f"\n num unique predicted particles {len(particles)}")
 
         # Drop particles that are infeasible (in wrong parts of the state space)
         for particle in particles:
             if (particle.target_position in self.grid_map.obstacle_poses) or (particle.robot_position in self.grid_map.obstacle_poses):
                 particles.pop(particle)
-
+        # print(f"\n num predicted particles after removing invalids {len(particles)}")
 
         # It is possible that the neural network returns a new belief such that a few particles are repeated. This is okay. However, for 
         # better exploration, new particles are added whenever this happens
-        num_predicted_particles = len(set(particles)) 
+        num_predicted_particles = len(particles) 
         num_particles_to_add = self.bel_size - num_predicted_particles 
-        if num_particles_to_add > 0:
-            while num_particles_to_add != 0:
-                sample_robot_position = (random.randint(0, self.grid_map.width-1),
-                                   random.randint(0, self.grid_map.length-1))
-                sample_target_position = (random.randint(0, self.grid_map.width-1),
-                                   random.randint(0, self.grid_map.length-1))
-                if (sample_robot_position in self.grid_map.obstacle_poses) or (sample_target_position in self.grid_map.obstacle_poses):
-                    # Skip obstacles
-                    continue            
+        while num_particles_to_add > 0:
+            sample_robot_position = (random.randint(0, self.grid_map.width-1),
+                               random.randint(0, self.grid_map.length-1))
+            sample_target_position = (random.randint(0, self.grid_map.width-1),
+                               random.randint(0, self.grid_map.length-1))
+            if (sample_robot_position in self.grid_map.obstacle_poses) or (sample_target_position in self.grid_map.obstacle_poses):
+                # Skip obstacles
+                continue            
 
-                particles.append(TagState(sample_robot_position, sample_target_position, False))
-                num_particles_to_add = self.bel_size - len(set(particles)) 
+            particles.append(TagState(sample_robot_position, sample_target_position, False))
+            particles = list(set(particles)) # Redefine particles just in case the added one was a duplicate
+            num_particles_to_add = self.bel_size - len(particles) # Update counter
 
         belief = pomdp_py.Particles(particles)
         return belief
