@@ -158,16 +158,14 @@ class EnergyPredAutoencoder(nn.Module):
             # Transform new_belief back to the original data modality
             new_belief = new_belief.reshape(desired_shape)
             new_belief = F.sigmoid(new_belief)
-            new_belief[:, :2] = self.scale_mask(new_belief[:, :2])
+            # new_belief[:, :2] = self.scale_mask(new_belief[:, :2])
 
         elif self.unnorm_size[0] == "tag":
             # Transform new_belief back to the original data modality
             new_belief = new_belief.reshape(desired_shape)
             new_belief = F.sigmoid(new_belief)
-            new_belief[:,1] = self.scale_maskx(new_belief[:,1])
-            new_belief[:,3] = self.scale_maskx(new_belief[:,3])
-            new_belief[:,2] = self.scale_masky(new_belief[:,2])
-            new_belief[:,4] = self.scale_masky(new_belief[:,4])
+            new_belief[:,0] = self.scale_maskx(new_belief[:,0])
+            new_belief[:,1] = self.scale_masky(new_belief[:,1])
 
         
         return new_belief, energy
@@ -267,6 +265,7 @@ class Network_Utils():
         self.belprobnet_lr = belprobnet_lr
         self.energynet_lr = energynet_lr
         self.hist_tensor = None
+        self.true_next_state = None # The true updated state of the env. Contains observable features that are used in the belief update
         self.discount_factor = discount_factor
 
         self.qnet_optim = optim.Adam(self.q_net.parameters(), lr=self.qnet_lr, weight_decay=1e-5) # Weight decay is L2 regularization
@@ -333,7 +332,7 @@ class Network_Utils():
 
             self.bel_prob = new_bel_prob
 
-            new_belief = self.env_data_processing.particles_from_output(new_belief)
+            new_belief = self.env_data_processing.particles_from_output(new_belief, self.true_next_state)
             return new_belief, new_bel_prob
 
 

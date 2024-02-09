@@ -89,6 +89,7 @@ class TagDataProcessing(DataProcessing):
         super().__init__(t, bel_size)
         self.grid_map = grid_map
         self.num_actions = 5
+        self.unknown_state_features = 2 # target_position (tuple): x,y location of the target.
 
         # Action name must be the same as the `name` field of the action class
         self.actions = {
@@ -163,32 +164,35 @@ class TagDataProcessing(DataProcessing):
             the samples
 
         Returns:
-            Torch tensor for a batch representing the belief state features
+            Torch tensor for a batch representing the unknown belief state features
 
         """
         assert len(belief.particles) == self.bel_size, "The number of particles must match the size of the belief subset"  
-        batch = torch.zeros(self.bel_size, 5) # Currently this is configured only for the default tag world. Changes to the world need changes here
+        batch = torch.zeros(self.bel_size, self.unknown_state_features)
 
         for idx, particle in enumerate(belief.particles):
-            sample_robot_position = particle.robot_position # tuple
+            # sample_robot_position = particle.robot_position # tuple
             sample_target_position = particle.target_position # tuple
 
-            sample_target_found = particle.target_found # bool
-            sample_target_found = 1. if sample_target_found == True else 0.
+            # sample_target_found = particle.target_found # bool
+            # sample_target_found = 1. if sample_target_found == True else 0.
 
-            sample = np.concatenate((np.array(sample_robot_position), np.array(sample_target_position), sample_target_found), axis=None)
+            sample = np.array(sample_target_position)
+            # sample = np.concatenate((np.array(sample_robot_position), np.array(sample_target_position), sample_target_found), axis=None)
             batch[idx] = torch.from_numpy(sample).to(torch.float)
 
         return batch
 
 
-    def particles_from_output(self, out):
+    def particles_from_output(self, out, true_env_state):
         """Generate a belief instance (pomdp_py.representations.distribution.Particles) from the output of the neural network
 
         Reinvigorate particles if the network predicted a belief subset with the same particles repeated
 
         Args:
             out (tensor): A tensor of the output of the neural network
+            true_env_state (pomdp_py.State): The true state of the environment after taking the real action. ONLY the observable features from this are
+                used. The unknown ones are discarded!
 
 
         Returns:
@@ -199,11 +203,11 @@ class TagDataProcessing(DataProcessing):
         particles = []
         for i in range(self.bel_size):
             sample = out[i]
-            sample_robot_position = (int(round(sample[0])), int(round(sample[1])))
-            sample_target_position = (int(round(sample[2])), int(round(sample[3])))
+            sample_robot_position = true_env_state.robot_position
+            sample_target_position = (int(round(sample[0])), int(round(sample[1]))) # unkown predicted feature
 
-            sample_target_found = sample[-1]
-            sample_target_found = True if sample_target_found < 0.5 else False           
+            sample_target_found = true_env_state.target_found
+            # sample_target_found = True if sample_target_found < 0.5 else False           
 
             particles.append(TagState(sample_robot_position, sample_target_position, sample_target_found))
 
@@ -214,7 +218,7 @@ class TagDataProcessing(DataProcessing):
 
         # Drop particles that are infeasible (in wrong parts of the state space)
         for particle in particles:
-            if (particle.target_position in self.grid_map.obstacle_poses) or (particle.robot_position in self.grid_map.obstacle_poses):
+            if (particle.target_position in self.grid_map.obstacle_poses):
                 particles.pop(particle)
         # print(f"\n num predicted particles after removing invalids {len(particles)}")
 
@@ -223,15 +227,15 @@ class TagDataProcessing(DataProcessing):
         num_predicted_particles = len(particles) 
         num_particles_to_add = self.bel_size - num_predicted_particles 
         while num_particles_to_add > 0:
-            sample_robot_position = (random.randint(0, self.grid_map.width-1),
-                               random.randint(0, self.grid_map.length-1))
+            sample_robot_position = true_env_state.robot_position
             sample_target_position = (random.randint(0, self.grid_map.width-1),
                                random.randint(0, self.grid_map.length-1))
-            if (sample_robot_position in self.grid_map.obstacle_poses) or (sample_target_position in self.grid_map.obstacle_poses):
+            sample_target_found = true_env_state.target_found
+            if (sample_target_position in self.grid_map.obstacle_poses):
                 # Skip obstacles
                 continue            
 
-            particles.append(TagState(sample_robot_position, sample_target_position, False))
+            particles.append(TagState(sample_robot_position, sample_target_position, sample_target_found))
             particles = list(set(particles)) # Redefine particles just in case the added one was a duplicate
             num_particles_to_add = self.bel_size - len(particles) # Update counter
 
@@ -261,6 +265,7 @@ class RocksampleDataProcessing(DataProcessing):
         self.k = k
         self.num_fixed_actions = 5
         self.num_actions = k + 5
+        self.unknown_state_features = k
 
         self.actions = {
         "move-NORTH": 0,
@@ -344,35 +349,35 @@ class RocksampleDataProcessing(DataProcessing):
 
         """
         assert len(belief.particles) == self.bel_size, "The number of particles must match the size of the belief subset"  
-        batch = torch.zeros(self.bel_size,self.k+3)
+        batch = torch.zeros(self.bel_size, self.unknown_state_features)
         # if torch.is_tensor(probabilities):
         #     probabilities = probabilities.detach().numpy()
 
         for idx, particle in enumerate(belief.particles):
-            sample_pos = particle.position
+            # sample_pos = particle.position
             sample_rocktypes = list(particle.rocktypes)
             for i in range(len(sample_rocktypes)):
                 sample_rocktypes[i] = 0. if sample_rocktypes[i] == "bad" else 1.
-            sample_terminal = particle.terminal
-            sample_terminal = 1. if sample_terminal == True else 0.
+            # sample_terminal = particle.terminal
+            # sample_terminal = 1. if sample_terminal == True else 0.
             # sample_prob = probabilities[idx]
 
-
-            # sample = np.concatenate((np.array(sample_pos), np.array(sample_rocktypes), sample_terminal, sample_prob), axis=None)
-            sample = np.concatenate((np.array(sample_pos), np.array(sample_rocktypes), sample_terminal), axis=None)
+            sample = np.array(sample_rocktypes)
+            # sample = np.concatenate((np.array(sample_pos), np.array(sample_rocktypes), sample_terminal), axis=None)
             batch[idx] = torch.from_numpy(sample).to(torch.float)
 
         return batch
 
 
-    def particles_from_output(self, out):
+    def particles_from_output(self, out, true_env_state):
         """Generate a belief instance (pomdp_py.representations.distribution.Particles) from the output of the neural network
 
         Reinvigorate particles if the network predicted a belief subset with the same particles repeated
 
         Args:
             out (tensor): A tensor of the output of the neural network
-
+            true_env_state (pomdp_py.State): The true state of the environment after taking the real action. ONLY the observable features from this are
+                used. The unknown ones are discarded!
 
         Returns:
             A belief (pomdp_py.representations.distribution.Particles) instance representing the outputs of the neural network
@@ -382,8 +387,8 @@ class RocksampleDataProcessing(DataProcessing):
         particles = []
         for i in range(self.bel_size):
             sample = out[i]
-            sample_pos = (int(round(sample[0])), int(round(sample[1])))
-            sample_rocktypes = sample[2:self.k+2]
+            sample_pos = true_env_state.position
+            sample_rocktypes = sample
             sample_rocktypes = sample_rocktypes > 0.5
 
             rocktypes = []
@@ -395,8 +400,8 @@ class RocksampleDataProcessing(DataProcessing):
                     rocktypes.append("bad")
 
             rocktypes = tuple(rocktypes)
-            sample_terminal = sample[-1]
-            sample_terminal = True if sample_terminal < 0.5 else False
+            sample_terminal = true_env_state.terminal
+            # sample_terminal = True if sample_terminal < 0.5 else False
 
             particles.append(rs.State(sample_pos, rocktypes, sample_terminal))
 
@@ -406,7 +411,7 @@ class RocksampleDataProcessing(DataProcessing):
 
         # It is possible that the neural network returns a new belief such that a few particles are repeated. This is okay. However, for 
         # better exploration, new particles are added whenever this happens
-        num_predicted_particles = len(set(particles)) 
+        num_predicted_particles = len(particles) 
         num_particles_to_add = self.bel_size - num_predicted_particles 
         if num_particles_to_add > 0:
             for _ in range(num_particles_to_add):
@@ -414,7 +419,7 @@ class RocksampleDataProcessing(DataProcessing):
                 for i in range(self.k):
                     rocktypes.append(rs.RockType.random())
                 rocktypes = tuple(rocktypes)
-                particles.append(rs.State((random.randint(0, self.n-1), random.randint(0, self.n-1)), rocktypes, False))
+                particles.append(rs.State(true_env_state.position, rocktypes, true_env_state.sample_terminal))
 
             # # Keeping the first probability and repeating the others
             # probabilities[num_predicted_particles:] = np.full((num_particles_to_add), (1-np.sum(probabilities[:num_predicted_particles]))/num_particles_to_add)
