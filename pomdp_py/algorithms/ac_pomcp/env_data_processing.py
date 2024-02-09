@@ -219,7 +219,7 @@ class TagDataProcessing(DataProcessing):
         # Drop particles that are infeasible (in wrong parts of the state space)
         for particle in particles:
             if (particle.target_position in self.grid_map.obstacle_poses):
-                particles.pop(particle)
+                particles.remove(particle)
         # print(f"\n num predicted particles after removing invalids {len(particles)}")
 
         # It is possible that the neural network returns a new belief such that a few particles are repeated. This is okay. However, for 
