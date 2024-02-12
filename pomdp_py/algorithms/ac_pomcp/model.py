@@ -3,6 +3,7 @@ import numpy.ma as ma
 import pomdp_py
 from pomdp_problems.rocksample import rocksample_problem as rs
 import random
+from itertools import product
 
 import torch
 import torch.nn as nn
@@ -137,7 +138,7 @@ class EnergyPredAutoencoder(nn.Module):
 
 
 
-    def forward(self, x, cond):
+    def forward(self, x, cond, return_score=False):
         desired_shape = x.shape
         x = x.flatten()
         x.requires_grad = True
@@ -149,6 +150,8 @@ class EnergyPredAutoencoder(nn.Module):
 
         # score = -grad(energy(x))
         score = grad(outputs=energy, inputs=x, grad_outputs=torch.ones_like(energy), retain_graph=True, create_graph=True)[0]
+        if return_score:
+            return score
 
         # denoised x = x - score
         new_belief = x - score
@@ -336,7 +339,7 @@ class Network_Utils():
             return new_belief, new_bel_prob
 
 
-    def updateNetworks(self, agent, reward, best_action_value, hnext_value):
+    def updateNetworks(self, agent, reward, best_action_value, hnext_value, past_belief, simulated_next_states):
         ## Note: Switching from using predicted Q values in the semi-gradient update to using hnext values from the search tree.
         ## Still keeping the q network for comparison! It is however NOT USED Anywhere
 
@@ -344,7 +347,7 @@ class Network_Utils():
         pred_q_values = self.q_net(self.hist_tensor)
         hist_conditioned_qvalues = self.hist_conditioned_qvalues
         best_action_value = torch.tensor([best_action_value], requires_grad=True)
-        reward_tensor = torch.tensor([reward], requires_grad=False)
+        # reward_tensor = torch.tensor([reward], requires_grad=False)
 
         assert pred_q_values.shape == hist_conditioned_qvalues.shape, "The shapes of Q(.|h) and Qnet(h) must match"
 
@@ -375,7 +378,31 @@ class Network_Utils():
         belprobnet_loss = F.mse_loss(bootstrapped_return, best_action_value)
 
         ### ENERGY NET LOSS ###
-        energynet_loss = F.mse_loss(self.energy, reward_tensor)
+        # Belif tensor of the past bel (b)
+        past_belief_tensor = self.env_data_processing.batch_from_particles(belief=past_belief)
+        
+        # Replacing Nones with the same state (will turn to zero when evaluating losses)
+        for idx, next_states in enumerate(simulated_next_states):
+            if next_states == None:
+                simulated_next_states[idx] = past_belief.particles[idx]
+
+        # Finding all possible next belief states
+        # Given next states as [[a,b], [c,d]] returns [[a,c], [a,d], [b,c], [b,d]]
+        inner_lengths = [len(next_states) for next_states in simulated_next_states]
+        index_combinations = product(*[range(length) for length in inner_lengths])
+        target_particles = [[simulated_next_states[i][j] for i, j in enumerate(combination)] for combination in index_combinations]
+        target_beliefs = [pomdp_py.Particles(particles) for particles in target_particles]
+        target_belief_tensors = [self.env_data_processing.batch_from_particles(belief=target_bel) for target_bel in target_beliefs]
+        
+        # Computing target scores or denoising signals (for score matching)
+        target_scores = [taget_belief_tensor - past_belief_tensor for target_belief_tensor in target_belief_tensors]
+
+        # Pred scores
+        pred_scores = [self.energy_net(past_belief_tensor.to(torch.float), self.hist_tensor, return_score=True) for i in range(len(past_belief.particles))]
+
+        energynet_loss = torch.zeros(0)
+        for pred_score, target_score in zip(pred_scores, target_scores)
+        energynet_loss += F.mse_loss(pred_score, target_score)
 
         ### UPDATE ###
         # Not used anywhere! Just here for comparison
