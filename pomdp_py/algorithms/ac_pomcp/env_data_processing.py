@@ -155,7 +155,7 @@ class TagDataProcessing(DataProcessing):
             return torch.from_numpy(np.array(history[-self.t:])).to(torch.float)
 
 
-    def batch_from_particles(self, belief):
+    def batch_from_particles(self, belief=None, particles=None):
         """Generate a batch of tensors with input samples for the belief network
 
         Args:
@@ -167,10 +167,18 @@ class TagDataProcessing(DataProcessing):
             Torch tensor for a batch representing the unknown belief state features
 
         """
-        assert len(belief.particles) == self.bel_size, "The number of particles must match the size of the belief subset"  
+        if (belief==None and particles==None) or (belief!=None and particles!=None):
+            raise Exception("Either a belief or particles (not both) are needed as input")
+        if belief != None:
+            assert len(belief.particles) == self.bel_size, "The number of particles must match the size of the belief subset"  
+            particles = belief.particles
+        elif particles != None:
+            assert len(particles) == self.bel_size, "The number of particles must match the size of the belief subset"  
+
         batch = torch.zeros(self.bel_size, self.unknown_state_features)
 
-        for idx, particle in enumerate(belief.particles):
+
+        for idx, particle in enumerate(particles):
             # sample_robot_position = particle.robot_position # tuple
             sample_target_position = particle.target_position # tuple
 
@@ -335,7 +343,7 @@ class RocksampleDataProcessing(DataProcessing):
             return torch.from_numpy(np.array(history[-self.t:])).to(torch.float)
 
 
-    def batch_from_particles(self, belief):
+    def batch_from_particles(self, belief=None, particles=None):
         """Generate a batch of tensors with input samples for the belief network
 
         Args:
@@ -348,12 +356,21 @@ class RocksampleDataProcessing(DataProcessing):
             Torch tensor for a batch representing the belief state features
 
         """
-        assert len(belief.particles) == self.bel_size, "The number of particles must match the size of the belief subset"  
+
+        if (belief==None and particles==None) or (belief!=None and particles!=None):
+            raise Exception("Either a belief or particles (not both) are needed as input")
+        if belief != None:
+            assert len(belief.particles) == self.bel_size, "The number of particles must match the size of the belief subset"  
+            particles = belief.particles
+        elif particles != None:
+            assert len(particles) == self.bel_size, "The number of particles must match the size of the belief subset" 
+
+ 
         batch = torch.zeros(self.bel_size, self.unknown_state_features)
         # if torch.is_tensor(probabilities):
         #     probabilities = probabilities.detach().numpy()
 
-        for idx, particle in enumerate(belief.particles):
+        for idx, particle in enumerate(particles):
             # sample_pos = particle.position
             sample_rocktypes = list(particle.rocktypes)
             for i in range(len(sample_rocktypes)):

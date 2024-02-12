@@ -4,6 +4,7 @@ import pomdp_py
 from pomdp_problems.rocksample import rocksample_problem as rs
 import random
 from itertools import product
+import copy
 
 import torch
 import torch.nn as nn
@@ -389,20 +390,50 @@ class Network_Utils():
         # Finding all possible next belief states
         # Given next states as [[a,b], [c,d]] returns [[a,c], [a,d], [b,c], [b,d]]
         inner_lengths = [len(next_states) for next_states in simulated_next_states]
-        index_combinations = product(*[range(length) for length in inner_lengths])
-        target_particles = [[simulated_next_states[i][j] for i, j in enumerate(combination)] for combination in index_combinations]
-        target_beliefs = [pomdp_py.Particles(particles) for particles in target_particles]
-        target_belief_tensors = [self.env_data_processing.batch_from_particles(belief=target_bel) for target_bel in target_beliefs]
-        # Computing target scores or denoising signals (for score matching)
-        target_scores = [target_belief_tensor - past_belief_tensor for target_belief_tensor in target_belief_tensors]
-        target_scores = torch.stack(target_scores, dim=0)
+        index_combinations = list(product(*[range(length) for length in inner_lengths]))
+        for combination in index_combinations:
+            if len(combination) != self.env_data_processing.bel_size:
+                index_combinations.remove(combination)
 
-        # Pred scores
-        pred_score = self.energy_net(past_belief_tensor.to(torch.float), self.hist_tensor, return_score=True).reshape(past_belief_tensor.shape)
-        pred_scores = [pred_score for i in range(len(target_scores))]
-        pred_scores = torch.stack(pred_scores, dim=0)
+        # It's possible that the simulation did not result in any real_action-real_observation root nodes. 
+        # Do not update energy in this case
+        update_energynet = True
+        if len(index_combinations) == 0:
+            update_energynet = False
+        
+        if update_energynet:
+            target_particles = []
+            for combination in index_combinations:
+                temp = []
+                for ind, val in enumerate(combination):
+                    temp.append(simulated_next_states[ind][val])
+                target_particles.append(temp)
 
-        energynet_loss = F.mse_loss(pred_scores, target_scores)
+            try:
+                target_belief_tensors = [self.env_data_processing.batch_from_particles(particles=particles) for particles in target_particles]
+            except AssertionError as e:
+                for particles in target_particles:
+                    if len(particles) != self.env_data_processing.bel_size:
+                        print(particles)
+                raise e
+            # Computing target scores or denoising signals (for score matching)
+            target_scores = [target_belief_tensor - past_belief_tensor for target_belief_tensor in target_belief_tensors]
+            
+            try:
+                target_scores = torch.stack(target_scores, dim=0)
+            except RuntimeError as e:
+                print(target_scores)
+                print(index_combinations)
+                print(target_belief_tensors)
+                print(target_particles)
+                raise e
+
+            # Pred scores
+            pred_score = self.energy_net(past_belief_tensor.to(torch.float), self.hist_tensor, return_score=True).reshape(past_belief_tensor.shape)
+            pred_scores = [pred_score for i in range(len(target_scores))]
+            pred_scores = torch.stack(pred_scores, dim=0)
+
+            energynet_loss = F.mse_loss(pred_scores, target_scores)
 
         ### UPDATE ###
         # Not used anywhere! Just here for comparison
@@ -414,9 +445,12 @@ class Network_Utils():
         belprobnet_loss.backward()
         self.belprobnet_optim.step()
 
-        self.energynet_optim.zero_grad()
-        energynet_loss.backward()
-        self.energynet_optim.step()
+        if update_energynet:
+            self.energynet_optim.zero_grad()
+            energynet_loss.backward()
+            self.energynet_optim.step()
+        else:
+            energynet_loss = torch.tensor([float('nan')])
 
 
         return qnet_loss, belprobnet_loss, energynet_loss
