@@ -430,4 +430,11 @@ class Network_Utils():
         return qnet_loss, belprobnet_loss, energynet_loss
 
 
+    def save_checkpoints(self, path):
+        torch.save(self.energy_net.state_dict(), f"{path}_energynet.pth")
+        torch.save(self.bel_prob_net.state_dict(), f"{path}_belprobnet.pth")
+        # torch.save(self.q_net, f"qnet_{path}")
+
+
+
 
