@@ -274,8 +274,8 @@ class Network_Utils():
     
     def argmax(self, hist_conditioned_qvalues):
         # Creating a clone to convert nan to num. Nans are needed during the update later on but affect the argmax operation
-        temp_qvalues = torch.clone(hist_conditioned_qvalues).detach()
-        idx = torch.argmax(torch.nan_to_num(temp_qvalues), dim=0)
+        temp_qvalues = torch.clone(hist_conditioned_qvalues).detach().numpy()
+        idx = np.nanargmax(temp_qvalues, axis=0)
         actions_dict = dict((v, k) for k, v in self.env_data_processing.actions.items())
         action_name = actions_dict[idx.item()]
         action_value = hist_conditioned_qvalues[idx.item()]

@@ -17,6 +17,29 @@ import math
 from tqdm import tqdm
 
 
+cdef class VNodeParticles(VNode):
+    """POMCP's VNode maintains particle belief"""
+    def __init__(self, num_visits, belief=Particles([])):
+        self.num_visits = num_visits
+        self.belief = belief
+        self.children = {}  # a -> QNode
+    def __str__(self):
+        return "VNode(%.3f, %.3f, %d | %s)" % (self.num_visits, self.value, len(self.belief),
+                                               str(self.children.keys()))
+    def __repr__(self):
+        return self.__str__()
+
+cdef class RootVNodeParticles(RootVNode):
+    def __init__(self, num_visits, history, belief=Particles([])):
+        # vnodeobj = VNodeParticles(num_visits, value, belief=belief)
+        RootVNode.__init__(self, num_visits, history)
+        self.belief = belief
+    @classmethod
+    def from_vnode(cls, vnode, history):
+        rootnode = RootVNodeParticles(vnode.num_visits, history, belief=vnode.belief)
+        rootnode.children = vnode.children
+        return rootnode
+
 cdef class AC_POMCP(POUCT):
 
     """AC_POMCP description ..."""
@@ -55,11 +78,11 @@ cdef class AC_POMCP(POUCT):
         if not hasattr(self._agent, "tree"):
             self._agent.add_attr("tree", None)
 
-        bel_state_conditioned_qvalues, bel_state_conditioned_hnextvalues, time_taken, sims_count = self._search()
+        bel_state_conditioned_qvalues, bel_state_conditioned_hnextvalues, simulated_trees, time_taken, sims_count = self._search()
         self._last_num_sims = sims_count
         self._last_planning_time = time_taken
 
-        return bel_state_conditioned_qvalues, bel_state_conditioned_hnextvalues
+        return bel_state_conditioned_qvalues, bel_state_conditioned_hnextvalues, simulated_trees
 
 
     ### NEW ###
@@ -84,6 +107,7 @@ cdef class AC_POMCP(POUCT):
 
         bel_state_conditioned_qvalues = []
         bel_state_conditioned_hnextvalues = []
+        simulated_trees = []
         for state in self._agent.belief.particles:
             # Run a set of simulations per belief state (stopping criteria could be num_sims or time_taken)
             bel_conditioned_sims_count = 0
@@ -126,51 +150,79 @@ cdef class AC_POMCP(POUCT):
             next_hist_values = self._agent.tree.return_next_hist_values()
             bel_state_conditioned_qvalues.append(action_values)
             bel_state_conditioned_hnextvalues.append(next_hist_values)
+            simulated_trees.append(copy.deepcopy(self._agent.tree))
 
 
             # Reset the tree for the next belief state
             self._agent.tree = None
 
 
-        return bel_state_conditioned_qvalues, bel_state_conditioned_hnextvalues, time_taken, sims_count 
+        return bel_state_conditioned_qvalues, bel_state_conditioned_hnextvalues, simulated_trees, time_taken, sims_count 
 
 
-
-    cpdef public update(self, Agent agent, Action real_action, Observation real_observation):
-        """
-        Add the real_action and real_observation to agent.tree (which is currently None). Then prune all other branches 
-        And set agent.tree[real_action][real_observation] as the new root node
-
-        Assume that the agent's history has been updated after taking real_action
-        and receiving real_observation.
-        """
-
-        # Define the tree as a new root node with the previous (un-updated) history 
-        if agent.tree is None:
-            root = RootVNode(self._num_visits_init, agent.history[:-1])
-            agent.tree = root
-
-        # Expand the new tree with real_action and real_observation
-        if agent.tree[real_action] is None:
-            selected_action = QNode(self._num_visits_init,
-                                        self._value_init)
-            agent.tree[real_action] = selected_action
-
-        if agent.tree[real_action][real_observation] is None:
-            agent.tree[real_action][real_observation] =  self._VNode()
+    cpdef _simulate(AC_POMCP self,
+                    State state, tuple history, VNode root, QNode parent,
+                    Observation observation, int depth):
+        total_reward = POUCT._simulate(self, state, history, root, parent, observation, depth)
+        if depth == 1 and root is not None:
+            # Record the next states seen during simulation for the root nodes at depth 1. 
+            # These will be used to learn the belief update function
+            root.belief.add(state)  # belief update happens as simulation goes.
+        return total_reward
 
 
-        if not hasattr(agent, "tree") or agent.tree is None:
-            print("Warning: agent does not have tree. Have you planned yet?")
-            return
-
-        if real_action not in agent.tree\
-           or real_observation not in agent.tree[real_action]:
-            agent.tree = None  # replan, if real action or observation differs from all branches
-        elif agent.tree[real_action][real_observation] is not None:
-            # Update the tree (prune)
-            agent.tree = RootVNode.from_vnode(
-                agent.tree[real_action][real_observation],
-                agent.history)
+    def _VNode(self, agent=None, root=False, **kwargs):
+        """Returns a VNode with default values; The function naming makes it clear
+        that this function is about creating a VNode object."""
+        if root:
+            # agent cannot be None.
+            return RootVNodeParticles(self._num_visits_init,
+                                      agent.history,
+                                      belief=copy.deepcopy(agent.belief))
         else:
-            raise ValueError("Unexpected state; child should not be None")
+            if agent is None:
+                return VNodeParticles(self._num_visits_init,
+                                      belief=Particles([]))
+            else:
+                return VNodeParticles(self._num_visits_init,
+                                      belief=copy.deepcopy(agent.belief))
+
+
+    # cpdef public update(self, Agent agent, Action real_action, Observation real_observation):
+    #     """
+    #     Add the real_action and real_observation to agent.tree (which is currently None). Then prune all other branches 
+    #     And set agent.tree[real_action][real_observation] as the new root node
+
+    #     Assume that the agent's history has been updated after taking real_action
+    #     and receiving real_observation.
+    #     """
+
+    #     # Define the tree as a new root node with the previous (un-updated) history 
+    #     if agent.tree is None:
+    #         root = RootVNode(self._num_visits_init, agent.history[:-1])
+    #         agent.tree = root
+
+    #     # Expand the new tree with real_action and real_observation
+    #     if agent.tree[real_action] is None:
+    #         selected_action = QNode(self._num_visits_init,
+    #                                     self._value_init)
+    #         agent.tree[real_action] = selected_action
+
+    #     if agent.tree[real_action][real_observation] is None:
+    #         agent.tree[real_action][real_observation] =  self._VNode()
+
+
+    #     if not hasattr(agent, "tree") or agent.tree is None:
+    #         print("Warning: agent does not have tree. Have you planned yet?")
+    #         return
+
+    #     if real_action not in agent.tree\
+    #        or real_observation not in agent.tree[real_action]:
+    #         agent.tree = None  # replan, if real action or observation differs from all branches
+    #     elif agent.tree[real_action][real_observation] is not None:
+    #         # Update the tree (prune)
+    #         agent.tree = RootVNode.from_vnode(
+    #             agent.tree[real_action][real_observation],
+    #             agent.history)
+    #     else:
+    #         raise ValueError("Unexpected state; child should not be None")
