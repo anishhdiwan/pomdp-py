@@ -380,11 +380,11 @@ class Network_Utils():
         ### ENERGY NET LOSS ###
         # Belif tensor of the past bel (b)
         past_belief_tensor = self.env_data_processing.batch_from_particles(belief=past_belief)
-        
+
         # Replacing Nones with the same state (will turn to zero when evaluating losses)
         for idx, next_states in enumerate(simulated_next_states):
             if next_states == None:
-                simulated_next_states[idx] = past_belief.particles[idx]
+                simulated_next_states[idx] = [past_belief.particles[idx]]
 
         # Finding all possible next belief states
         # Given next states as [[a,b], [c,d]] returns [[a,c], [a,d], [b,c], [b,d]]
@@ -393,16 +393,16 @@ class Network_Utils():
         target_particles = [[simulated_next_states[i][j] for i, j in enumerate(combination)] for combination in index_combinations]
         target_beliefs = [pomdp_py.Particles(particles) for particles in target_particles]
         target_belief_tensors = [self.env_data_processing.batch_from_particles(belief=target_bel) for target_bel in target_beliefs]
-        
         # Computing target scores or denoising signals (for score matching)
-        target_scores = [taget_belief_tensor - past_belief_tensor for target_belief_tensor in target_belief_tensors]
+        target_scores = [target_belief_tensor - past_belief_tensor for target_belief_tensor in target_belief_tensors]
+        target_scores = torch.stack(target_scores, dim=0)
 
         # Pred scores
-        pred_scores = [self.energy_net(past_belief_tensor.to(torch.float), self.hist_tensor, return_score=True) for i in range(len(past_belief.particles))]
+        pred_score = self.energy_net(past_belief_tensor.to(torch.float), self.hist_tensor, return_score=True).reshape(past_belief_tensor.shape)
+        pred_scores = [pred_score for i in range(len(target_scores))]
+        pred_scores = torch.stack(pred_scores, dim=0)
 
-        energynet_loss = torch.zeros(0)
-        for pred_score, target_score in zip(pred_scores, target_scores)
-        energynet_loss += F.mse_loss(pred_score, target_score)
+        energynet_loss = F.mse_loss(pred_scores, target_scores)
 
         ### UPDATE ###
         # Not used anywhere! Just here for comparison
