@@ -208,7 +208,6 @@ class TagDataProcessing(DataProcessing):
         out = out.detach().numpy()
         out  = [out[i] for i in range(self.bel_size)]      
         particles = []
-        print(f"\n probabilities pre {probabilities}")
 
         # Drop particles that are infeasible (in wrong parts of the state space)
         for i in range(self.bel_size):
@@ -249,14 +248,13 @@ class TagDataProcessing(DataProcessing):
         # particles = list(set(particles))
         # print(f"\n num unique predicted particles {len(particles)}")
 
-        print(f"\n particles {particles}")
-        print(f"\n probabilities {probabilities}")
-
         # Adding new random particles with the pending probabilities to have bel_size particles again
         # num_predicted_particles = len(particles) 
         # num_particles_to_add = self.bel_size - num_predicted_particles
         num_particles_to_add = len(nones)
-        pending_prob = (1 - probabilities.clone().detach().sum().item())/num_particles_to_add 
+        if num_particles_to_add > 0:
+            pending_prob = (1 - probabilities.clone().detach().sum().item())/num_particles_to_add 
+
         while num_particles_to_add > 0:
             sample_robot_position = true_env_state.robot_position
             sample_target_position = (random.randint(0, self.grid_map.width-1),
@@ -279,10 +277,6 @@ class TagDataProcessing(DataProcessing):
             num_particles_to_add = len(nones) # Update counter
 
         belief = pomdp_py.Particles(particles)
-        
-        print(f"\n particles post add {particles}")
-        print(f"\n probabilities post add {probabilities}")
-        print("-------")
         return belief, probabilities
 
 
@@ -421,7 +415,7 @@ class RocksampleDataProcessing(DataProcessing):
         return batch
 
 
-    def particles_from_output(self, out, true_env_state):
+    def particles_from_output(self, out, true_env_state, probabilities):
         """Generate a belief instance (pomdp_py.representations.distribution.Particles) from the output of the neural network
 
         Reinvigorate particles if the network predicted a belief subset with the same particles repeated
@@ -436,6 +430,7 @@ class RocksampleDataProcessing(DataProcessing):
 
         """
         out = out.detach().numpy()
+        out  = [out[i] for i in range(self.bel_size)]
         particles = []
         for i in range(self.bel_size):
             sample = out[i]
@@ -455,27 +450,47 @@ class RocksampleDataProcessing(DataProcessing):
             sample_terminal = true_env_state.terminal
             # sample_terminal = True if sample_terminal < 0.5 else False
 
-            particles.append(rs.State(sample_pos, rocktypes, sample_terminal))
+            particle = rs.State(sample_pos, rocktypes, sample_terminal)
+
+            # If particle is already in the list then do not add again. Instead update the probability
+            try: # Using try/except instead of if/else as it is faster to search using .index()
+                idx = particles.index(particle)
+                particles.append(None)
+                probabilities[idx] += probabilities[i]
+                probabilities[i] = 0.0
+            except ValueError:
+                particles.append(particle)
+
+        nones = []
+        for idx, val in enumerate(particles):
+            if val == None:
+                nones.append(idx)
 
 
         # Drop duplicates
-        particles = list(set(particles))
+        # particles = list(set(particles))
 
         # It is possible that the neural network returns a new belief such that a few particles are repeated. This is okay. However, for 
         # better exploration, new particles are added whenever this happens
-        num_predicted_particles = len(particles) 
-        num_particles_to_add = self.bel_size - num_predicted_particles 
+        num_particles_to_add = len(nones)
         if num_particles_to_add > 0:
-            for _ in range(num_particles_to_add):
-                rocktypes = []
-                for i in range(self.k):
-                    rocktypes.append(rs.RockType.random())
-                rocktypes = tuple(rocktypes)
-                particles.append(rs.State(true_env_state.position, rocktypes, true_env_state.sample_terminal))
+            pending_prob = (1 - probabilities.clone().detach().sum().item())/num_particles_to_add 
 
-            # # Keeping the first probability and repeating the others
-            # probabilities[num_predicted_particles:] = np.full((num_particles_to_add), (1-np.sum(probabilities[:num_predicted_particles]))/num_particles_to_add)
+        while num_particles_to_add > 0:
+            rocktypes = []
+            for i in range(self.k):
+                rocktypes.append(rs.RockType.random())
+            rocktypes = tuple(rocktypes)
+            particle = rs.State(true_env_state.position, rocktypes, true_env_state.terminal)
+            if particle in particles:
+                continue
+            else:
+                idx = nones.pop()
+                particles[idx] = particle
+                probabilities[idx] = pending_prob
+
+            num_particles_to_add = len(nones) # Update counter
+
 
         belief = pomdp_py.Particles(particles)
-
-        return belief
+        return belief, probabilities
