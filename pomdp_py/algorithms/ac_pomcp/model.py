@@ -334,9 +334,9 @@ class Network_Utils():
             new_belief_detached = new_belief.clone().detach()
             new_bel_prob = self.bel_prob_net(new_belief_detached)
 
+            new_belief, new_bel_prob = self.env_data_processing.particles_from_output(new_belief, self.true_next_state, new_bel_prob)
             self.bel_prob = new_bel_prob
-
-            new_belief = self.env_data_processing.particles_from_output(new_belief, self.true_next_state)
+            
             return new_belief, new_bel_prob
 
 
@@ -415,9 +415,9 @@ class Network_Utils():
 
         ### UPDATE ###
         # Not used anywhere! Just here for comparison
-        self.qnet_optim.zero_grad()
-        qnet_loss.backward()
-        self.qnet_optim.step()
+        # self.qnet_optim.zero_grad()
+        # qnet_loss.backward()
+        # self.qnet_optim.step()
 
         self.belprobnet_optim.zero_grad()
         belprobnet_loss.backward()

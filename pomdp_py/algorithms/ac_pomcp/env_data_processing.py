@@ -190,7 +190,7 @@ class TagDataProcessing(DataProcessing):
         return batch
 
 
-    def particles_from_output(self, out, true_env_state):
+    def particles_from_output(self, out, true_env_state, probabilities):
         """Generate a belief instance (pomdp_py.representations.distribution.Particles) from the output of the neural network
 
         Reinvigorate particles if the network predicted a belief subset with the same particles repeated
@@ -205,33 +205,37 @@ class TagDataProcessing(DataProcessing):
             A belief (pomdp_py.representations.distribution.Particles) instance representing the outputs of the neural network
 
         """
-        out = out.detach().numpy()
+        out = out.detach().numpy()        
         particles = []
         for i in range(self.bel_size):
             sample = out[i]
-            sample_robot_position = true_env_state.robot_position
             sample_target_position = (int(round(sample[0])), int(round(sample[1]))) # unkown predicted feature
+            # Drop particles that are infeasible (in wrong parts of the state space)
+            if (sample_target_position in self.grid_map.obstacle_poses):
+                probabilities[i] = 0.0
+                continue
 
+            sample_robot_position = true_env_state.robot_position
             sample_target_found = true_env_state.target_found
-            # sample_target_found = True if sample_target_found < 0.5 else False           
-
-            particles.append(TagState(sample_robot_position, sample_target_position, sample_target_found))
+            particle = TagState(sample_robot_position, sample_target_position, sample_target_found)
+            
+            # If particle is already in the list then do not add again. Instead update the probability
+            try: # Using try/except instead of if/else as it is faster to search using .index()
+                idx = particles.index(particle)
+                probabilities[idx] += probabilities[i]
+                probabilities[i] = 0.0
+            except ValueError:
+                particles.append(TagState(sample_robot_position, sample_target_position, sample_target_found))
 
 
         # Drop duplicates
-        particles = list(set(particles))
+        # particles = list(set(particles))
         # print(f"\n num unique predicted particles {len(particles)}")
 
-        # Drop particles that are infeasible (in wrong parts of the state space)
-        for particle in particles:
-            if (particle.target_position in self.grid_map.obstacle_poses):
-                particles.remove(particle)
-        # print(f"\n num predicted particles after removing invalids {len(particles)}")
-
-        # It is possible that the neural network returns a new belief such that a few particles are repeated. This is okay. However, for 
-        # better exploration, new particles are added whenever this happens
+        # Adding new random particles with the pending probabilities to have bel_size particles again
         num_predicted_particles = len(particles) 
-        num_particles_to_add = self.bel_size - num_predicted_particles 
+        num_particles_to_add = self.bel_size - num_predicted_particles
+        pending_prob = probabilities.sum()/num_predicted_particles 
         while num_particles_to_add > 0:
             sample_robot_position = true_env_state.robot_position
             sample_target_position = (random.randint(0, self.grid_map.width-1),
@@ -241,12 +245,18 @@ class TagDataProcessing(DataProcessing):
                 # Skip obstacles
                 continue            
 
-            particles.append(TagState(sample_robot_position, sample_target_position, sample_target_found))
-            particles = list(set(particles)) # Redefine particles just in case the added one was a duplicate
+            particle = TagState(sample_robot_position, sample_target_position, sample_target_found)
+            if particle in particles:
+                continue
+            else:
+                particles.append(TagState(sample_robot_position, sample_target_position, sample_target_found))
+                idx = len(particles) - 1
+                probabilities[idx] += pending_prob
+            
             num_particles_to_add = self.bel_size - len(particles) # Update counter
 
         belief = pomdp_py.Particles(particles)
-        return belief
+        return belief, probabilities
 
 
 class RocksampleDataProcessing(DataProcessing):
