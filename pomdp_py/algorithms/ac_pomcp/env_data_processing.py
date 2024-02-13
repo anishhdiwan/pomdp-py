@@ -205,57 +205,84 @@ class TagDataProcessing(DataProcessing):
             A belief (pomdp_py.representations.distribution.Particles) instance representing the outputs of the neural network
 
         """
-        out = out.detach().numpy()        
+        out = out.detach().numpy()
+        out  = [out[i] for i in range(self.bel_size)]      
         particles = []
+        print(f"\n probabilities pre {probabilities}")
+
+        # Drop particles that are infeasible (in wrong parts of the state space)
         for i in range(self.bel_size):
             sample = out[i]
             sample_target_position = (int(round(sample[0])), int(round(sample[1]))) # unkown predicted feature
-            # Drop particles that are infeasible (in wrong parts of the state space)
             if (sample_target_position in self.grid_map.obstacle_poses):
+                out[i] = None
                 probabilities[i] = 0.0
-                continue
 
-            sample_robot_position = true_env_state.robot_position
-            sample_target_found = true_env_state.target_found
-            particle = TagState(sample_robot_position, sample_target_position, sample_target_found)
-            
-            # If particle is already in the list then do not add again. Instead update the probability
-            try: # Using try/except instead of if/else as it is faster to search using .index()
-                idx = particles.index(particle)
-                probabilities[idx] += probabilities[i]
-                probabilities[i] = 0.0
-            except ValueError:
-                particles.append(TagState(sample_robot_position, sample_target_position, sample_target_found))
+        for i in range(self.bel_size):
+            sample = out[i]
 
+            if sample is None:
+                particles.append(None)
+            else:
+                sample_target_position = (int(round(sample[0])), int(round(sample[1]))) # unkown predicted feature
+                sample_robot_position = true_env_state.robot_position
+                sample_target_found = true_env_state.target_found
+                particle = TagState(sample_robot_position, sample_target_position, sample_target_found)
+                
+                # If particle is already in the list then do not add again. Instead update the probability
+                try: # Using try/except instead of if/else as it is faster to search using .index()
+                    idx = particles.index(particle)
+                    particles.append(None)
+                    probabilities[idx] += probabilities[i]
+                    probabilities[i] = 0.0
+                except ValueError:
+                    particles.append(particle)
+                    # idx = len(particles) - 1
+                    # probabilities[idx] = probabilities[i]
+
+        nones = []
+        for idx, val in enumerate(particles):
+            if val == None:
+                nones.append(idx)
 
         # Drop duplicates
         # particles = list(set(particles))
         # print(f"\n num unique predicted particles {len(particles)}")
 
+        print(f"\n particles {particles}")
+        print(f"\n probabilities {probabilities}")
+
         # Adding new random particles with the pending probabilities to have bel_size particles again
-        num_predicted_particles = len(particles) 
-        num_particles_to_add = self.bel_size - num_predicted_particles
-        pending_prob = probabilities.sum()/num_predicted_particles 
+        # num_predicted_particles = len(particles) 
+        # num_particles_to_add = self.bel_size - num_predicted_particles
+        num_particles_to_add = len(nones)
+        pending_prob = (1 - probabilities.clone().detach().sum().item())/num_particles_to_add 
         while num_particles_to_add > 0:
             sample_robot_position = true_env_state.robot_position
             sample_target_position = (random.randint(0, self.grid_map.width-1),
                                random.randint(0, self.grid_map.length-1))
             sample_target_found = true_env_state.target_found
             if (sample_target_position in self.grid_map.obstacle_poses):
-                # Skip obstacles
                 continue            
 
             particle = TagState(sample_robot_position, sample_target_position, sample_target_found)
             if particle in particles:
                 continue
             else:
-                particles.append(TagState(sample_robot_position, sample_target_position, sample_target_found))
-                idx = len(particles) - 1
-                probabilities[idx] += pending_prob
+                idx = nones.pop()
+                particles[idx] = particle
+                probabilities[idx] = pending_prob
+                # idx = len(particles) - 1
+                # probabilities[idx] += pending_prob
             
-            num_particles_to_add = self.bel_size - len(particles) # Update counter
+            # num_particles_to_add = self.bel_size - len(particles) # Update counter
+            num_particles_to_add = len(nones) # Update counter
 
         belief = pomdp_py.Particles(particles)
+        
+        print(f"\n particles post add {particles}")
+        print(f"\n probabilities post add {probabilities}")
+        print("-------")
         return belief, probabilities
 
 
