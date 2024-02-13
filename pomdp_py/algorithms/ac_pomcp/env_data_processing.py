@@ -17,10 +17,8 @@ def elegant_pair(input_coords):
     """
     x = input_coords[0]
     y = input_coords[1]
-    print(f"coords xy {x,y}")
 
-    assert isinstance(x, int), "The input must be a tuple of ints"
-    assert isinstance(y, int), "The input must be a tuple of ints"
+    assert isinstance(x, int) and isinstance(y, int), "The input must be a tuple of ints"
 
     if x >= y:
         return x*x + x + y
