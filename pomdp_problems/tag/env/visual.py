@@ -65,7 +65,7 @@ class TagViz:
     def last_observation(self):
         return self._last_observation
 
-    def update(self, action, observation, belief):
+    def update(self, action, observation, belief, probability=None):
         """
         Update the visualization after there is new real action and observation
         and updated belief.
@@ -73,6 +73,10 @@ class TagViz:
         self._last_action = action
         self._last_observation = observation
         self._last_belief = belief
+        if probability != None:
+            self._last_prob = probability
+        else:
+            self._last_prob = None
 
     @staticmethod
     def draw_robot(img, x, y, th, size, color=(255,12,12)):
@@ -94,13 +98,19 @@ class TagViz:
 
     # TODO! Deprecated.
     @staticmethod
-    def draw_belief(img, belief, r, size, target_color):
+    def draw_belief(img, belief, r, size, target_color, prob=None):
         """belief (OOBelief)"""
         radius = int(round(r / 2))
 
         circle_drawn = {}  # map from pose to number of times drawn
 
-        hist = belief.get_histogram()
+        if prob == None:
+            hist = belief.get_histogram()
+        else:
+            hist = {}
+            for idx, state in enumerate(belief.particles):
+                hist[state] = prob[idx].item()
+
         color = target_color
 
         last_val = -1
@@ -222,7 +232,7 @@ class TagViz:
         # last_viz_observation = self._last_viz_observation.get(robot_id, None)
         # last_belief = self._last_belief.get(robot_id, None)
         if self._last_belief is not None:
-            TagViz.draw_belief(img, self._last_belief, r, r//3, self._target_color)
+            TagViz.draw_belief(img, self._last_belief, r, r//3, self._target_color, prob=self._last_prob)
         if self._last_observation is not None:
             TagViz.draw_observation(img, self._last_observation,
                                     rx, ry, 0, r, r//8, color=(20, 20, 180))
