@@ -319,25 +319,28 @@ class Network_Utils():
 
     def getNewBelief(self, agent, first_step=False):
         # History is set only after getNewBelief() is executed. This is not true on step 1 as the uniform belief is used. Hence it is added here for the first update
-        if first_step:
-            self.hist_tensor = self.env_data_processing.cond_from_history(agent.history)
-            belief_tensor = self.env_data_processing.batch_from_particles(belief=agent.belief)
-            _, self.energy = self.energy_net(belief_tensor.to(torch.float), self.hist_tensor)
-        
-        else:
-            # Compute the new belief state and probabilities given the old ones
-            belief_tensor = self.env_data_processing.batch_from_particles(belief=agent.belief)
-            self.hist_tensor = self.env_data_processing.cond_from_history(agent.history)
+        # Computing new beliefs is done with no_grad(). The energy net is instead updated later on by computing the 
+        # score from the current bel and matching that with the score seen in sim
+        with torch.no_grad():
+            if first_step:
+                self.hist_tensor = self.env_data_processing.cond_from_history(agent.history)
+                belief_tensor = self.env_data_processing.batch_from_particles(belief=agent.belief)
+                _, self.energy = self.energy_net(belief_tensor.to(torch.float), self.hist_tensor)
             
-            new_belief, self.energy = self.energy_net(belief_tensor.to(torch.float), self.hist_tensor)
-            # Detach the new belief so that gradients do not flow back to the energy network
-            new_belief_detached = new_belief.clone().detach()
-            new_bel_prob = self.bel_prob_net(new_belief_detached)
+            else:
+                # Compute the new belief state and probabilities given the old ones
+                belief_tensor = self.env_data_processing.batch_from_particles(belief=agent.belief)
+                self.hist_tensor = self.env_data_processing.cond_from_history(agent.history)
+                
+                new_belief, self.energy = self.energy_net(belief_tensor.to(torch.float), self.hist_tensor)
+                # Detach the new belief so that gradients do not flow back to the energy network
+                new_belief_detached = new_belief.clone().detach()
+                new_bel_prob = self.bel_prob_net(new_belief_detached)
 
-            new_belief, new_bel_prob = self.env_data_processing.particles_from_output(new_belief, self.true_next_state, new_bel_prob)
-            self.bel_prob = new_bel_prob
-            
-            return new_belief, new_bel_prob
+                new_belief, new_bel_prob = self.env_data_processing.particles_from_output(new_belief, self.true_next_state, new_bel_prob)
+                self.bel_prob = new_bel_prob
+                
+                return new_belief, new_bel_prob
 
 
     def updateNetworks(self, agent, reward, best_action_value, hnext_value, past_belief, simulated_next_states):
