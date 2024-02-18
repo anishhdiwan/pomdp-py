@@ -128,29 +128,48 @@ class TagDataProcessing(DataProcessing):
         # Convert history objects to floats
         for idx, entry in enumerate(history):
             if isinstance(entry, pomdp_py.Action):
-                history[idx] = self.actions[entry.name]
+                action_vector = [0.0 for _ in range(self.num_actions)]
+                action_vector[self.actions[entry.name]] = 1.0
+                history[idx] = action_vector
+
+                # history[idx] = self.actions[entry.name]
 
             if isinstance(entry, pomdp_py.Observation):
                 # Observation is a tuple of Target pose (x,y). 
                 # Using the Elegant Pair Fn. to map to a 1D space
                 if entry.target_position == None:
-                    history[idx] = -1.
+                    history[idx] = 0.0
                 else:
-                    history[idx] = elegant_pair(entry.target_position)
+                    history[idx] = list(entry.target_position)
+                    # history[idx] = elegant_pair(entry.target_position)
 
+        # Flatten to one list again
+        history_flat = []
+        for array in history:
+            for entry in array:
+                history_flat.append(entry)
+        history = history_flat
         
-        # Padding/slicing
+        # Padding/slicing and normalising
+        min_val = 0.0
+        max_val = 9.0
         if len(history) == self.t:
-            return torch.from_numpy(np.array(history)).to(torch.float)
+            hist_tensor = torch.from_numpy(np.array(history)).to(torch.float)
+            hist_tensor = (hist_tensor - min_val)/(max_val - min_val)
+            return hist_tensor
 
         if len(history) < self.t:
             # Zero padding if the history tuple is smaller than t
             hist_tensor = torch.zeros((self.t))
             hist_tensor[(self.t - len(history)):] = torch.from_numpy(np.array(history))
-            return hist_tensor.to(torch.float)
+            hist_tensor = hist_tensor.to(torch.float)
+            hist_tensor = (hist_tensor - min_val)/(max_val - min_val)
+            return 
 
         if len(history) > self.t:
-            return torch.from_numpy(np.array(history[-self.t:])).to(torch.float)
+            hist_tensor = torch.from_numpy(np.array(history[-self.t:])).to(torch.float)
+            hist_tensor = (hist_tensor - min_val)/(max_val - min_val)
+            return hist_tensor
 
 
     def batch_from_particles(self, belief=None, particles=None):
