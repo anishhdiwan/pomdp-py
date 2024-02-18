@@ -138,7 +138,7 @@ class TagDataProcessing(DataProcessing):
                 # Observation is a tuple of Target pose (x,y). 
                 # Using the Elegant Pair Fn. to map to a 1D space
                 if entry.target_position == None:
-                    history[idx] = 0.0
+                    history[idx] = [-1.0, -1.0]
                 else:
                     history[idx] = list(entry.target_position)
                     # history[idx] = elegant_pair(entry.target_position)
@@ -151,7 +151,7 @@ class TagDataProcessing(DataProcessing):
         history = history_flat
         
         # Padding/slicing and normalising to -1,1
-        min_val = 0.0
+        min_val = -1.0
         max_val = 9.0
         if len(history) == self.t:
             hist_tensor = torch.from_numpy(np.array(history)).to(torch.float)
@@ -208,7 +208,7 @@ class TagDataProcessing(DataProcessing):
             # sample = np.concatenate((np.array(sample_robot_position), np.array(sample_target_position), sample_target_found), axis=None)
             sample = torch.from_numpy(sample)
             sample = ((sample - min_val)*2 -1)/(max_val - min_val)
-            batch[idx] = torch.from_numpy(sample).to(torch.float)
+            batch[idx] = sample.to(torch.float)
 
         return batch
 
