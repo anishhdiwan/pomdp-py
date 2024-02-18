@@ -150,12 +150,12 @@ class TagDataProcessing(DataProcessing):
                 history_flat.append(entry)
         history = history_flat
         
-        # Padding/slicing and normalising
+        # Padding/slicing and normalising to -1,1
         min_val = 0.0
         max_val = 9.0
         if len(history) == self.t:
             hist_tensor = torch.from_numpy(np.array(history)).to(torch.float)
-            hist_tensor = (hist_tensor - min_val)/(max_val - min_val)
+            hist_tensor = ((hist_tensor - min_val)*2 -1)/(max_val - min_val)
             return hist_tensor
 
         if len(history) < self.t:
@@ -163,12 +163,12 @@ class TagDataProcessing(DataProcessing):
             hist_tensor = torch.zeros((self.t))
             hist_tensor[(self.t - len(history)):] = torch.from_numpy(np.array(history))
             hist_tensor = hist_tensor.to(torch.float)
-            hist_tensor = (hist_tensor - min_val)/(max_val - min_val)
-            return 
+            hist_tensor = ((hist_tensor - min_val)*2 -1)/(max_val - min_val)
+            return hist_tensor
 
         if len(history) > self.t:
             hist_tensor = torch.from_numpy(np.array(history[-self.t:])).to(torch.float)
-            hist_tensor = (hist_tensor - min_val)/(max_val - min_val)
+            hist_tensor = ((hist_tensor - min_val)*2 -1)/(max_val - min_val)
             return hist_tensor
 
 
@@ -194,7 +194,9 @@ class TagDataProcessing(DataProcessing):
 
         batch = torch.zeros(self.bel_size, self.unknown_state_features)
 
-
+        # Normalise to -1,1
+        min_val = 0.0
+        max_val = 9.0
         for idx, particle in enumerate(particles):
             # sample_robot_position = particle.robot_position # tuple
             sample_target_position = particle.target_position # tuple
@@ -204,6 +206,8 @@ class TagDataProcessing(DataProcessing):
 
             sample = np.array(sample_target_position)
             # sample = np.concatenate((np.array(sample_robot_position), np.array(sample_target_position), sample_target_found), axis=None)
+            sample = torch.from_numpy(sample)
+            sample = ((sample - min_val)*2 -1)/(max_val - min_val)
             batch[idx] = torch.from_numpy(sample).to(torch.float)
 
         return batch
